@@ -497,11 +497,10 @@ function openTerminalTab(title, command) {
   const safeTitle = title.replace(/"/g, '\\"');
 
   const appleScript = `tell application "Terminal"
-    do script "${safeShellPath}"
-    activate
-    delay 0.2
-    set custom title of window 1 to "${safeTitle}"
-    set title displays custom title of window 1 to true
+    set winId to do script "${safeShellPath}"
+    set custom title of winId to "${safeTitle}"
+    set title displays custom title of winId to true
+    set miniaturized of winId to true
 end tell
 `;
   const scriptFile = path.join(tmpDir, `launch-${Date.now()}.scpt`);
