@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Office - Pixelmon Edition</title>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="office.css">
+</head>
+<body>
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-text">Loading...</div>
+  </div>
+
+  <div class="game-container">
+    <!-- Header / HUD -->
+    <header class="hud">
+      <div class="hud-left">
+        <h1 class="title">Agent Office</h1>
+        <span class="subtitle">Pixelmon Edition</span>
+      </div>
+      <div class="hud-right">
+        <button class="btn pixel-btn" id="refreshBtn">Refresh</button>
+        <button class="btn pixel-btn btn-wake" id="wakeAgentsBtn">Wake Agents</button>
+        <button class="btn pixel-btn btn-hire" id="hireBtn">+ Hire Agent</button>
+      </div>
+    </header>
+
+    <!-- Status Bar -->
+    <div class="status-bar">
+      <div class="stat">
+        <span class="stat-label">AGENTS</span>
+        <span class="stat-value" id="teamCount">0</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">TEAMS</span>
+        <span class="stat-value" id="teamsCount">0</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">TASKS</span>
+        <span class="stat-value" id="tasksActive">0</span>
+      </div>
+      <span class="separator"></span>
+      <div class="stat">
+        <span class="stat-label" id="currentTime">--:--</span>
+      </div>
+      <span class="separator"></span>
+      <div class="stat">
+        <span class="stat-label" style="color: var(--poke-yellow);">WASD / Arrows to walk</span>
+      </div>
+    </div>
+
+    <!-- Walkable Office Map (Canvas) -->
+    <main class="office-map-container">
+      <canvas id="officeCanvas"></canvas>
+      <div id="walkTooltip" class="walk-tooltip hidden"></div>
+    </main>
+
+    <!-- Agent Roster (below map) -->
+    <section class="agent-roster" id="agentRoster">
+      <h2 class="roster-title">Agent Roster</h2>
+      <div class="roster-grid" id="rosterGrid"></div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="game-footer">
+      <span class="footer-text">Use WASD or Arrow Keys to explore the office! Click on agents to inspect them.</span>
+    </footer>
+  </div>
+
+  <!-- HIRE AGENT MODAL -->
+  <div class="modal" id="hireModal">
+    <div class="modal-content pixel-box">
+      <div class="modal-header">
+        <h2>Hire New Agent</h2>
+        <button class="close-btn" id="closeHireModal">&times;</button>
+      </div>
+      <form id="hireForm">
+        <div class="form-group">
+          <label for="agentName">Agent Name</label>
+          <input type="text" id="agentName" placeholder="e.g., Spark, Bolt, Flameon..." class="pixel-input" autofocus>
+        </div>
+        <div class="form-group">
+          <label for="agentRole">Agent Type</label>
+          <select id="agentRole" class="pixel-input">
+            <option value="manager">Manager (Trevor)</option>
+            <option value="trevor">Trevor (Manager)</option>
+            <option value="luca">Backend Node.js (Luca)</option>
+            <option value="ellie">Frontend UI/UX (Ellie)</option>
+            <option value="general-purpose">General Purpose</option>
+            <option value="Explore">Explorer</option>
+            <option value="Plan">Architect</option>
+            <option value="code-reviewer">Code Reviewer</option>
+            <option value="silent-failure-hunter">Bug Hunter</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="agentPrompt">Task / Prompt</label>
+          <textarea id="agentPrompt" placeholder="What should this agent work on?" class="pixel-input" rows="4"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="agentDescription">Description</label>
+          <input type="text" id="agentDescription" placeholder="e.g., A brave fire-type agent" class="pixel-input">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn pixel-btn cancel-hire">Cancel</button>
+          <button type="submit" class="btn pixel-btn btn-hire">Hire!</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- AGENT DETAIL MODAL -->
+  <div class="modal" id="agentDetailModal">
+    <div class="modal-content pixel-box">
+      <div class="modal-header">
+        <h2 id="detailTitle">Agent Details</h2>
+        <button class="close-btn" id="closeDetailModal">&times;</button>
+      </div>
+      <div class="agent-detail-body">
+        <div class="detail-pixel-sprite" id="detailSprite"></div>
+        <div class="detail-info">
+          <p id="detailName"></p>
+          <p id="detailTeam"></p>
+          <p id="detailType"></p>
+        </div>
+        <div class="form-group">
+          <label for="detailDescription">Description</label>
+          <textarea id="detailDescription" rows="3" class="pixel-input"></textarea>
+          <button class="btn pixel-btn" id="saveDescription">Save Description</button>
+        </div>
+        <div class="modal-actions" style="margin-top:12px;">
+          <button class="btn pixel-btn btn-shut" id="shutDownAgent">Shut Down Team</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- NOTIFICATION AREA -->
+  <div id="notifications"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
