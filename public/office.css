@@ -1691,3 +1691,19 @@ textarea.pixel-input {
   from { transform: translateX(-50%) translateY(20px); opacity: 0; }
   to { transform: translateX(-50%) translateY(0); opacity: 1; }
 }
+
+/* Roster filter bar */
+.roster-filter-bar {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #22223e;
+  border-bottom: 2px solid var(--panel-border);
+  align-items: center;
+}
+.roster-filter-bar .roster-search {
+  flex: 1;
+}
+.roster-filter-bar .roster-type-filter {
+  min-width: 140px;
+}

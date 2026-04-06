@@ -68,100 +68,49 @@ document.addEventListener('keyup', (e) => {
   keysDownCount = 0;
 });
 
-// Office map layout (1 = wall, 0 = floor, 2 = desk, 6 = door, 7 = plant, 8 = lounge chair, 9 = whiteboard, 50 = water fountain)
-// The office is a grid. Agents are placed based on their type/role.
+// Office map layout (1=wall, 0=floor, 2=desk, 6=door, 7=plant, 8=lounge, 9=whiteboard, 50=fountain)
 function getMap() {
   const map = [];
   for (let y = 0; y < ROWS; y++) {
     const row = [];
     for (let x = 0; x < COLS; x++) {
-      if (y === 0 || y === ROWS - 1 || x === 0 || x === COLS - 1) {
-        row.push(1);
-      } else {
-        row.push(0);
-      }
+      if (y === 0 || y === ROWS - 1 || x === 0 || x === COLS - 1) row.push(1);
+      else row.push(0);
     }
     map.push(row);
   }
 
-  // --- ENTRANCE (bottom-left area, x:1-4, y:22-24) ---
-  // Main door at bottom
-  map[ROWS - 1][2] = 6;
-  map[ROWS - 1][3] = 6;
+  // ENTRANCE
+  map[ROWS - 1][2] = 6; map[ROWS - 1][3] = 6;
 
-  // --- MAIN OFFICE (top-center, x:5-18, y:2-10) ---
-  // Open plan desks in two rows
+  // MAIN OFFICE (x:7-15, y:3-8)
   for (let i = 0; i < 5; i++) {
-    map[4][7 + i * 2] = 2;  // Desk row 1
-    map[4][8 + i * 2] = 2;  // Chair
-    map[8][7 + i * 2] = 2;  // Desk row 2
-    map[8][8 + i * 2] = 2;  // Chair
+    map[4][7 + i * 2] = 2; map[4][8 + i * 2] = 2;
+    map[8][7 + i * 2] = 2; map[8][8 + i * 2] = 2;
   }
-  // Whiteboard on north wall
-  map[2][12] = 9;
-  map[2][13] = 9;
-  map[2][14] = 9;
-  map[2][15] = 9;
+  map[2][12] = 9; map[2][13] = 9; map[2][14] = 9; map[2][15] = 9;
+  map[11][20] = 7; // plant in hallway
 
-  // --- MEETING ROOM (top-right, x:22-34, y:2-10) ---
-  // Walls
-  for (let y = 2; y <= 10; y++) {
-    map[y][22] = 1;
-    map[y][34] = 1;
-  }
-  map[2][22] = 1; map[2][34] = 1;
-  map[10][22] = 1; map[10][34] = 1;
-  // Door on south wall
-  map[10][28] = 6;
-  map[10][29] = 6;
-  map[10][30] = 6;
-  // Meeting table in center
+  // MEETING ROOM (x:23-33, y:2-9) — smaller to make room for bball
+  for (let y = 2; y <= 9; y++) { map[y][23] = 1; map[y][33] = 1; }
+  map[2][23] = 1; map[2][33] = 1; map[9][23] = 1; map[9][33] = 1;
+  map[9][27] = 6; map[9][28] = 6; map[9][29] = 6;  // south door
   map[5][27] = 2; map[5][28] = 2; map[5][29] = 2; map[5][30] = 2; map[5][31] = 2;
   map[7][27] = 2; map[7][28] = 2; map[7][29] = 2; map[7][30] = 2; map[7][31] = 2;
 
-  // --- RESTING ROOM (right-mid, x:22-34, y:13-20) ---
-  for (let y = 13; y <= 20; y++) {
-    map[y][22] = 1;
-    map[y][34] = 1;
-  }
-  map[13][22] = 1; map[13][34] = 1;
-  map[20][22] = 1; map[20][34] = 1;
-  // Door on north wall
-  map[13][28] = 6;
-  map[13][29] = 6;
-  map[13][30] = 6;
-  // Lounge chairs
-  map[15][25] = 8; map[15][29] = 8; map[15][32] = 8;
-  map[18][25] = 8; map[18][29] = 8; map[18][32] = 8;
+  // TENNIS COURT (x:7-17, y:14-23)
+  for (let y = 14; y <= 23; y++) { map[y][6] = 1; map[y][17] = 1; }
+  map[14][6] = 1; map[14][17] = 1; map[23][6] = 1; map[23][17] = 1;
+  map[14][10] = 6; map[14][11] = 6; map[14][14] = 6; map[14][15] = 6;
 
-  // --- TENNIS COURT (bottom-center, x:6-17, y:14-23) ---
-  for (let y = 14; y <= 23; y++) {
-    map[y][6] = 1;
-    map[y][17] = 1;
-  }
-  map[14][6] = 1; map[14][17] = 1;
-  map[23][6] = 1; map[23][17] = 1;
-  // Doors
-  map[14][10] = 6; map[14][11] = 6;
-  map[14][13] = 6; map[14][14] = 6;
+  // BASKETBALL COURT (x:23-33, y:13-20) — uses old rest room space
+  for (let y = 13; y <= 20; y++) { map[y][23] = 1; map[y][33] = 1; }
+  map[13][23] = 1; map[13][33] = 1; map[20][23] = 1; map[20][33] = 1;
+  map[13][27] = 6; map[13][28] = 6; map[13][29] = 6;
 
-  // --- CORRIDOR (center vertical, x:20-21, all y) ---
-  // Keep open for walking
-
-  // --- HALLWAY (center, x:19-21, y:11-13) ---
-  // Connect offices to sports areas
-
-  // Plants
-  map[2][2] = 7; map[2][20] = 7;
-  map[2][36] = 7;
-  map[6][20] = 7;
-  map[11][20] = 7; map[11][21] = 7;
-  map[14][18] = 7;
-  map[22][4] = 7;
-
-  // Water fountain in hallway
-  map[12][18] = 50;
-  map[12][19] = 0;
+  // Plants + fountain
+  map[2][2] = 7; map[2][20] = 7; map[2][36] = 7; map[22][4] = 7;
+  map[12][18] = 50; map[12][19] = 0;
 
   return map;
 }
@@ -343,17 +292,13 @@ function drawTile(x, y, tile) {
       break;
     }
     case 50: {
-      // Water fountain
+      // Water fountain — base (animated drops in drawFountainAnimation)
       ctx.fillStyle = (x + y) % 2 === 0 ? '#f5f0e0' : '#ede8d4';
       ctx.fillRect(screenX, screenY, TILE, TILE);
       ctx.fillStyle = '#4fc3f7';
       ctx.fillRect(screenX + 14, screenY + 16, 20, 20);
       ctx.fillStyle = '#81d4fa';
       ctx.fillRect(screenX + 16, screenY + 18, 16, 8);
-      // Water drops
-      ctx.fillStyle = '#e1f5fe';
-      ctx.fillRect(screenX + 20, screenY + 8, 4, 8);
-      ctx.fillRect(screenX + 24, screenY + 12, 4, 4);
       break;
     }
     case 9: {
@@ -787,115 +732,85 @@ function drawSportsFloor() {
   ctx.fillText('🎾 TENNIS', tLx - ctx.measureText('🎾 TENNIS').width / 2, tLy + 6);
 
   // ========================================
-  //  BASKETBALL COURT — hardwood court
+  //  BASKETBALL COURT — hardwood (x:23-33, y:13-20)
   // ========================================
-  const bx = ox(20), by = oy(15), bw = 8 * TILE, bh = 6 * TILE;
+  const bx = ox(23), by = oy(13), bw = 10 * TILE, bh = 8 * TILE;
 
-  // Outer area
+  // Outer border
   ctx.fillStyle = '#4e342e';
   ctx.fillRect(bx - 6, by - 6, bw + 12, bh + 12);
 
-  // Hardwood surface
-  ctx.fillStyle = '#bf7c42';
+  // Hardwood floor
+  ctx.fillStyle = '#c4813b';
   ctx.fillRect(bx, by, bw, bh);
 
-  // Wood plank vertical lines
-  ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+  // Wood plank lines
+  ctx.strokeStyle = 'rgba(0,0,0,0.06)';
   ctx.lineWidth = 1;
   for (let px = bx; px <= bx + bw; px += TILE) {
     ctx.beginPath(); ctx.moveTo(px, by); ctx.lineTo(px, by + bh); ctx.stroke();
   }
 
-  // Playing area
-  const bx2 = bx + TILE, by2 = by + TILE, bw2 = bw - TILE * 2, bh2 = bh - TILE * 2;
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth = 2;
+  // Court border
+  const bx2 = bx + TILE, by2 = by + TILE;
+  const bw2 = bw - TILE * 2, bh2 = bh - TILE * 2;
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
   ctx.strokeRect(bx2, by2, bw2, bh2);
 
-  // Center line
+  // Center line + circle
   const bCx = bx2 + bw2 / 2, bCy = by2 + bh2 / 2;
   ctx.beginPath(); ctx.moveTo(bCx, by2); ctx.lineTo(bCx, by2 + bh2); ctx.stroke();
-
-  // Center circle
-  ctx.beginPath(); ctx.arc(bCx, bCy, 16, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(bCx, bCy, 18, 0, Math.PI * 2); ctx.stroke();
   ctx.fillStyle = '#ff8f00';
   ctx.beginPath(); ctx.arc(bCx, bCy, 4, 0, Math.PI * 2); ctx.fill();
 
-  // Keys (paint areas)
-  const keyW = bw2 * 0.18, keyH = bh2 * 0.5;
-  // Left key
+  // Paint areas (keys)
+  const keyW = bw2 * 0.17, keyH = bh2 * 0.45;
   ctx.fillStyle = 'rgba(244,67,54,0.3)';
   ctx.fillRect(bx2, bCy - keyH / 2, keyW, keyH);
   ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
   ctx.strokeRect(bx2, bCy - keyH / 2, keyW, keyH);
-  // Left free throw arc
   ctx.beginPath(); ctx.arc(bx2 + keyW, bCy, keyH / 2, -Math.PI / 2, Math.PI / 2); ctx.stroke();
 
-  // Right key
   ctx.fillStyle = 'rgba(244,67,54,0.3)';
   ctx.fillRect(bx2 + bw2 - keyW, bCy - keyH / 2, keyW, keyH);
   ctx.strokeRect(bx2 + bw2 - keyW, bCy - keyH / 2, keyW, keyH);
   ctx.beginPath(); ctx.arc(bx2 + bw2 - keyW, bCy, keyH / 2, Math.PI / 2, -Math.PI / 2); ctx.stroke();
 
   // Three-point arcs
-  const threeR = 30;
-  ctx.beginPath(); ctx.arc(bx2 + 4, bCy, threeR, -Math.PI * 0.42, Math.PI * 0.42); ctx.stroke();
-  ctx.beginPath(); ctx.arc(bx2 + bw2 - 4, bCy, threeR, Math.PI * 0.58, -Math.PI * 0.58); ctx.stroke();
+  ctx.beginPath(); ctx.arc(bx2 + 4, bCy, 32, -Math.PI * 0.42, Math.PI * 0.42); ctx.stroke();
+  ctx.beginPath(); ctx.arc(bx2 + bw2 - 4, bCy, 32, Math.PI * 0.58, -Math.PI * 0.58); ctx.stroke();
 
   // Backboards
   ctx.strokeStyle = '#555'; ctx.lineWidth = 3;
   ctx.beginPath();
-  ctx.moveTo(bx2 + 6, bCy - 14); ctx.lineTo(bx2 + 6, bCy + 14);
-  ctx.moveTo(bx2 + bw2 - 6, bCy - 14); ctx.lineTo(bx2 + bw2 - 6, bCy + 14);
+  ctx.moveTo(bx2 + 6, bCy - 16); ctx.lineTo(bx2 + 6, bCy + 16);
+  ctx.moveTo(bx2 + bw2 - 6, bCy - 16); ctx.lineTo(bx2 + bw2 - 6, bCy + 16);
   ctx.stroke();
 
   // Hoops
   ctx.fillStyle = '#ff6f00';
-  ctx.beginPath(); ctx.arc(bx2 + 14, bCy, 5, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(bx2 + bw2 - 14, bCy, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(bx2 + 16, bCy, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(bx2 + bw2 - 16, bCy, 5, 0, Math.PI * 2); ctx.fill();
 
-  // Label pill
-  const bLx = bx2 + bw2 / 2, bLy = by2 + 14;
-  drawPillBg(bLx, bLy, '🏀 BASKETBALL', 7);
+  // Label
+  drawPillBg(bx2 + bw2 / 2, by2 + 14, '🏀 BASKETBALL', 7);
   ctx.fillStyle = '#fff';
-  ctx.fillText('🏀 BASKETBALL', bLx - ctx.measureText('🏀 BASKETBALL').width / 2, bLy + 4);
+  ctx.fillText('🏀 BASKETBALL', bx2 + bw2 / 2 - ctx.measureText('🏀 BASKETBALL').width / 2, by2 + 18);
 
   // ========================================
-  //  RESTING ROOM — cozy lounge
+  //  CORRIDOR (x:19-21) — subtle stripe on floor
   // ========================================
-  const rx = ox(23), ry = oy(14), rw = 11 * TILE, rh = 6 * TILE;
-
-  // Carpet
-  ctx.fillStyle = '#5d4037';
-  ctx.fillRect(rx, ry, rw, rh);
-
-  // Carpet dots
-  ctx.fillStyle = 'rgba(255,255,255,0.04)';
-  for (let dx = rx + 12; dx < rx + rw; dx += 20) {
-    for (let dy2 = ry + 12; dy2 < ry + rh; dy2 += 20) {
-      ctx.beginPath(); ctx.arc(dx, dy2, 3, 0, Math.PI * 2); ctx.fill();
-    }
+  const corX = ox(19), corW = 3 * TILE;
+  for (let cy = oy(0); cy < canvas.height + TILE; cy += TILE) {
+    ctx.fillStyle = 'rgba(100,100,140,0.05)';
+    ctx.fillRect(corX, cy, corW, TILE);
   }
 
-  // Floor lamp
-  const lampX = rx + rw / 2, lampY = ry + rh / 2;
-  ctx.fillStyle = 'rgba(255,224,130,0.1)';
-  ctx.beginPath(); ctx.arc(lampX, lampY, TILE * 2, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#8d6e63';
-  ctx.fillRect(lampX - 2, lampY - 14, 4, 28);
-  ctx.fillStyle = '#ffe082';
-  ctx.beginPath(); ctx.arc(lampX, lampY - 14, 7, 0, Math.PI * 2); ctx.fill();
-
-  // Label pill
-  const rLx = rx + rw / 2, rLy = ry + TILE * 0.4;
-  drawPillBg(rLx, rLy, '☕ LOUNGE', 7);
-  ctx.fillStyle = '#fce4ec';
-  ctx.fillText('☕ LOUNGE', rLx - ctx.measureText('☕ LOUNGE').width / 2, rLy + 4);
-
   // ========================================
-  //  MEETING ROOM — professional
+  //  MEETING ROOM (x:23-33, y:2-9)
   // ========================================
-  const mx = ox(23), my = oy(3), mw = 11 * TILE, mh = 7 * TILE;
+  const mx = ox(23), my = oy(2), mw = 10 * TILE, mh = 8 * TILE;
 
   // Floor tiles
   ctx.fillStyle = '#cfd8dc';
@@ -943,6 +858,274 @@ function roundRect(x, y, w, h, r) {
   ctx.arcTo(x, y, x + w, y, r);
   ctx.closePath();
   ctx.fill();
+}
+
+// Animated fountain water particles
+function drawFountainAnimation() {
+  const now = Date.now();
+  // Fountain is at map position (18, 12)
+  const fx = 18 * TILE - camX + TILE / 2;
+  const fy = 12 * TILE - camY + TILE / 2;
+  if (fx < -50 || fx > canvas.width + 50 || fy < -50 || fy > canvas.height + 50) return;
+
+  // Rising water column
+  for (let i = 0; i < 4; i++) {
+    const phase = (now / 150 + i * 3) % 12;
+    if (phase < 6) {
+      const yOff = -phase * 3;
+      const alpha = 0.6 - phase * 0.08;
+      ctx.fillStyle = `rgba(129, 212, 250, ${alpha})`;
+      const size = 5 - phase * 0.5;
+      ctx.fillRect(fx - size / 2, fy - 8 + yOff, size, size);
+    }
+  }
+
+  // Falling drops (sine-based spread)
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2 + now / 800;
+    const radius = 12 + Math.sin(now / 200 + i) * 6;
+    const dx = fx + Math.cos(angle) * radius;
+    const dy = fy - 16 + Math.sin(now / 180 + i * 1.5) * 4 + (i % 3) * 5;
+    const dropAlpha = 0.4 + Math.sin(now / 300 + i) * 0.2;
+    ctx.fillStyle = `rgba(225, 245, 254, ${dropAlpha})`;
+    ctx.fillRect(dx - 2, dy, 4, 5);
+  }
+
+  // Splash ring at bottom (periodic)
+  const splashPhase = (now / 600) % 1;
+  if (splashPhase < 0.6) {
+    const ringR = splashPhase * 18;
+    const ringAlpha = (1 - splashPhase / 0.6) * 0.4;
+    ctx.strokeStyle = `rgba(144, 202, 249, ${ringAlpha})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(fx, fy + 6, ringR, ringR * 0.4, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
+// Wall posters and decorations along edges
+function drawWallDecorations() {
+  const ox = (v) => v * TILE - camX;
+  const oy = (v) => v * TILE - camY;
+
+  // Poster 1 — above office entrance
+  const p1x = ox(3), p1y = oy(1);
+  if (p1x > -TILE && p1x < canvas.width + TILE && p1y > -TILE && p1y < canvas.height + TILE) {
+    // Frame
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(p1x - 1, p1y - 1, TILE + 2, TILE + 2);
+    // White poster
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(p1x, p1y, TILE, TILE);
+    // Red accent stripe
+    ctx.fillStyle = '#e53935';
+    ctx.fillRect(p1x + 4, p1y + 6, TILE - 8, 4);
+    // Text lines
+    ctx.fillStyle = '#3c5aa6';
+    ctx.fillRect(p1x + 4, p1y + 14, TILE - 12, 2);
+    ctx.fillRect(p1x + 4, p1y + 20, TILE - 18, 2);
+    ctx.fillStyle = '#ffc400';
+    ctx.fillRect(p1x + 4, p1y + 28, TILE - 12, 2);
+    // Hanging string line
+    ctx.strokeStyle = '#888';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(p1x + TILE / 2, p1y - 1);
+    ctx.lineTo(p1x + TILE / 2, p1y - TILE);
+    ctx.stroke();
+  }
+
+  // Poster 2 — corridor wall
+  const p2x = ox(19), p2y = oy(4);
+  if (p2x > -TILE && p2x < canvas.width + TILE && p2y > -TILE && p2y < canvas.height + TILE) {
+    ctx.fillStyle = '#5d4037';
+    ctx.fillRect(p2x - 1, p2y - 1, TILE + 2, TILE + 2);
+    ctx.fillStyle = '#f5f5dc';
+    ctx.fillRect(p2x, p2y, TILE, TILE);
+    // Arrow pointing right
+    ctx.fillStyle = '#e53935';
+    ctx.fillRect(p2x + 8, p2y + 16, 20, 6);
+    ctx.fillRect(p2x + 28, p2y + 12, 8, 14);
+    ctx.fillRect(p2x + 32, p2y + 16, 4, 6);
+  }
+
+  // Motivational poster — bottom corridor
+  const p3x = ox(19), p3y = oy(12);
+  if (p3x > -TILE && p3x < canvas.width + TILE && p3y > -TILE && p3y < canvas.height + TILE) {
+    ctx.fillStyle = '#1b5e20';
+    ctx.fillRect(p3x - 1, p3y - 1, TILE + 2, TILE + 2);
+    ctx.fillStyle = '#e8f5e9';
+    ctx.fillRect(p3x, p3y, TILE, TILE);
+    // "KEEP PUSHING" text lines
+    ctx.fillStyle = '#2e7d32';
+    ctx.fillRect(p3x + 6, p3y + 10, TILE - 16, 3);
+    ctx.fillRect(p3x + 10, p3y + 16, TILE - 24, 2);
+    ctx.fillRect(p3x + 8, p3y + 22, TILE - 20, 2);
+    ctx.fillRect(p3x + 12, p3y + 28, TILE - 28, 2);
+  }
+}
+
+// Meeting room conference table with chairs
+function drawMeetingRoomTable() {
+  const ox = (v) => v * TILE - camX;
+  const oy = (v) => v * TILE - camY;
+
+  const tx = ox(25), ty = oy(5), tw = 6 * TILE, th = 2 * TILE;
+  const sx = ox(25), sy = oy(7), sw = 6 * TILE, sh = 2 * TILE;
+
+  if (tx > -TILE && tx < canvas.width + TILE && ty > -TILE && ty < canvas.height + TILE) {
+    // Table top — dark wood
+    ctx.fillStyle = '#3e2723';
+    ctx.fillRect(tx, ty, tw, th);
+    // Table highlight
+    ctx.fillStyle = '#5d4037';
+    ctx.fillRect(tx + 3, ty + 3, tw - 6, th - 6);
+    // Table edge
+    ctx.strokeStyle = '#4e342e';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(tx + 3, ty + 3, tw - 6, th - 6);
+  }
+
+  if (sx > -TILE && sx < canvas.width + TILE && sy > -TILE && sy < canvas.height + TILE) {
+    // Table bottom row
+    ctx.fillStyle = '#3e2723';
+    ctx.fillRect(sx, sy, sw, sh);
+    ctx.fillStyle = '#5d4037';
+    ctx.fillRect(sx + 3, sy + 3, sw - 6, sh - 6);
+    ctx.strokeStyle = '#4e342e';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(sx + 3, sy + 3, sw - 6, sh - 6);
+  }
+
+  // Laptop screens on table
+  for (let i = 0; i < 4; i++) {
+    const lx = ox(27 + i), ly = oy(5);
+    if (lx > -TILE && lx < canvas.width + TILE && ly > -TILE && ly < canvas.height + TILE) {
+      ctx.fillStyle = '#4fc3f7';
+      ctx.fillRect(lx + 16, ly + 10, 16, 12);
+      ctx.fillStyle = '#263238';
+      ctx.fillRect(lx + 14, ly + 24, 20, 4);
+    }
+  }
+}
+
+// Corridor directional signs
+function drawCorridorSigns() {
+  const ox = (v) => v * TILE - camX;
+  const oy = (v) => v * TILE - camY;
+
+  // Sign pointing to Office
+  const s1x = ox(18), s1y = oy(6);
+  if (s1x > -TILE * 2 && s1x < canvas.width + TILE && s1y > -TILE && s1y < canvas.height + TILE) {
+    ctx.fillStyle = '#ffc400';
+    ctx.fillRect(s1x + 18, s1y, 8, TILE);
+    ctx.fillStyle = '#2a2a4e';
+    ctx.fillRect(s1x + 8, s1y - 2, 28, 12);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 5px "Press Start 2P", monospace';
+    ctx.fillText('← OFFICE', s1x + 10, s1y + 7);
+  }
+
+  // Sign pointing to Sports area
+  const s2x = ox(20), s2y = oy(11);
+  if (s2x > -TILE * 2 && s2x < canvas.width + TILE && s2y > -TILE && s2y < canvas.height + TILE) {
+    ctx.fillStyle = '#ffc400';
+    ctx.fillRect(s2x + 18, s2y, 8, TILE);
+    ctx.fillStyle = '#2a2a4e';
+    ctx.fillRect(s2x + 2, s2y + TILE - 10, 40, 12);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 5px "Press Start 2P", monospace';
+    ctx.fillText('SPORTS →', s2x + 6, s2y + TILE - 3);
+  }
+
+  // Clock on corridor wall
+  const cx = ox(19), cy = oy(9);
+  if (cx > -TILE && cx < canvas.width + TILE && cy > -TILE && cy < canvas.height + TILE) {
+    // Clock face
+    ctx.fillStyle = '#f5f5dc';
+    ctx.beginPath();
+    ctx.arc(cx + TILE / 2, cy + TILE / 2, 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#2a2a4e';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // Hour hand
+    const hr = new Date().getHours() % 12, mn = new Date().getMinutes();
+    ctx.beginPath();
+    ctx.moveTo(cx + TILE / 2, cy + TILE / 2);
+    ctx.lineTo(cx + TILE / 2 + Math.cos((hr * 30 - 90) * Math.PI / 180) * 8, cy + TILE / 2 + Math.sin((hr * 30 - 90) * Math.PI / 180) * 8);
+    ctx.stroke();
+    // Minute hand
+    ctx.beginPath();
+    ctx.moveTo(cx + TILE / 2, cy + TILE / 2);
+    ctx.lineTo(cx + TILE / 2 + Math.cos((mn * 6 - 90) * Math.PI / 180) * 10, cy + TILE / 2 + Math.sin((mn * 6 - 90) * Math.PI / 180) * 10);
+    ctx.stroke();
+  }
+}
+
+// Minimap — small overview of the full office
+function drawMinimap() {
+  const scale = 3; // pixels per tile on minimap
+  const mw = COLS * scale;
+  const mh = ROWS * scale;
+
+  const pad = 16;
+  const px = canvas.width - mw - pad;
+  const py = pad;
+
+  // Background
+  ctx.fillStyle = 'rgba(15, 56, 15, 0.85)';
+  ctx.fillRect(px - 4, py - 4, mw + 8, mh + 8);
+  ctx.strokeStyle = '#ffc400';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(px - 4, py - 4, mw + 8, mh + 8);
+
+  // Tile colors
+  const tileColors = { 0: null, 1: '#3a3a6e', 2: '#8b6914', 6: '#4a90d9', 7: '#228b22', 8: '#4a6fa5', 9: '#f8f8f8', 50: '#4fc3f7' };
+
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      const tile = officeMap[y]?.[x];
+      const color = tileColors[tile];
+      if (color && tile !== 0) {
+        ctx.fillStyle = color;
+        ctx.fillRect(px + x * scale, py + y * scale, scale, scale);
+      } else if (tile === 0) {
+        ctx.fillStyle = '#2a2a4e';
+        ctx.fillRect(px + x * scale, py + y * scale, scale, scale);
+      }
+    }
+  }
+
+  // Agent dots on minimap
+  const agentPositions = getAgentPositions();
+  for (const pos of agentPositions) {
+    const a = pos.agent;
+    const isWorking = a.sessionActive || a.processAlive;
+    const isIdle = a.isLaunched && !a.processAlive;
+    ctx.fillStyle = isWorking ? '#4caf50' : isIdle ? '#ffc400' : '#f44336';
+    ctx.fillRect(px + pos.x * scale - 1, py + pos.y * scale - 1, scale + 2, scale + 2);
+  }
+
+  // Player dot (pulsing yellow)
+  const pulse = Math.sin(Date.now() / 200) * 0.3 + 0.7;
+  ctx.fillStyle = `rgba(255, 196, 0, ${pulse})`;
+  ctx.fillRect(px + Math.floor(player.x) * scale - 1, py + Math.floor(player.y) * scale - 1, scale + 2, scale + 2);
+
+  // Camera viewport rectangle
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+  ctx.lineWidth = 1;
+  const vx = px + (camX / TILE) * scale;
+  const vy = py + (camY / TILE) * scale;
+  const vw = (canvas.width / TILE) * scale;
+  const vh = (canvas.height / TILE) * scale;
+  ctx.strokeRect(vx, vy, vw, vh);
+
+  // "MAP" label
+  ctx.fillStyle = '#ffc400';
+  ctx.font = 'bold 6px "Press Start 2P", monospace';
+  ctx.fillText('MAP', px + mw / 2 - ctx.measureText('MAP').width / 2, py + mh + 12);
 }
 
 // Draw player
@@ -1099,6 +1282,12 @@ function render() {
   // Draw sports floors on top of tiles
   drawSportsFloor();
 
+  // Visual polish: animated fountain, decorations, meeting table, corridor signs
+  drawFountainAnimation();
+  drawWallDecorations();
+  drawMeetingRoomTable();
+  drawCorridorSigns();
+
   // Draw agent sprites on their desks
   const agentPositions = getAgentPositions();
   agentPositions.forEach(({ x, y, agent }) => {
@@ -1133,6 +1322,9 @@ function render() {
   if (tileAtPlayer === 6) {
     showTooltip('Press E to interact');
   }
+
+  // Draw minimap overlay
+  drawMinimap();
 
   requestAnimationFrame(render);
 }
@@ -1299,9 +1491,38 @@ function renderHUD(agentList, teamList) {
   renderRoster(agentList);
 }
 
+// Roster filter state
+let rosterSearchQuery = '';
+let rosterFilterType = 'all';
+
 // Render agent roster below the map
 function renderRoster(agentList) {
   const grid = document.getElementById('rosterGrid');
+
+  // Build filter bar
+  const filterBar = document.getElementById('rosterFilterBar');
+  if (filterBar) {
+    const searchInput = filterBar.querySelector('.roster-search');
+    if (searchInput) searchInput.value = rosterSearchQuery;
+    const typeSelect = filterBar.querySelector('.roster-type-filter');
+    if (typeSelect) typeSelect.value = rosterFilterType;
+  }
+
+  // Apply search filter
+  let filtered = agentList;
+  if (rosterSearchQuery) {
+    const q = rosterSearchQuery.toLowerCase();
+    filtered = filtered.filter(a =>
+      a.name.toLowerCase().includes(q) ||
+      (a.description && a.description.toLowerCase().includes(q)) ||
+      a.teamName.toLowerCase().includes(q) ||
+      (a.type && a.type.toLowerCase().includes(q))
+    );
+  }
+  if (rosterFilterType !== 'all') {
+    filtered = filtered.filter(a => a.type === rosterFilterType);
+  }
+
   if (agentList.length === 0) {
     grid.innerHTML = `<div class="roster-empty">No agents running yet. Hire your first agent!</div>`;
     return;
@@ -1403,6 +1624,22 @@ function renderRoster(agentList) {
       }
     });
   });
+
+  // Bind filter events
+  const searchBar = document.querySelector('.roster-search');
+  if (searchBar) {
+    searchBar.addEventListener('input', (e) => {
+      rosterSearchQuery = e.target.value;
+      renderRoster(agents);
+    });
+  }
+  const typeFilter = document.querySelector('.roster-type-filter');
+  if (typeFilter) {
+    typeFilter.addEventListener('change', (e) => {
+      rosterFilterType = e.target.value;
+      renderRoster(agents);
+    });
+  }
 }
 
 // Click handler for canvas - click on agents to inspect

@@ -59,6 +59,21 @@
     <!-- Agent Roster (below map) -->
     <section class="agent-roster" id="agentRoster">
       <h2 class="roster-title">Agent Roster</h2>
+      <div class="roster-filter-bar" id="rosterFilterBar">
+        <input type="text" class="roster-search pixel-input" placeholder="Search agents..." style="font-size:0.6rem;padding:6px 8px;">
+        <select class="roster-type-filter pixel-input" style="font-size:0.6rem;padding:6px 8px;width:auto;">
+          <option value="all">All Types</option>
+          <option value="trevor">Manager</option>
+          <option value="luca">Backend</option>
+          <option value="ellie">Frontend</option>
+          <option value="mateo">Debug</option>
+          <option value="general-purpose">General</option>
+          <option value="Explore">Explorer</option>
+          <option value="Plan">Architect</option>
+          <option value="code-reviewer">Reviewer</option>
+          <option value="silent-failure-hunter">Bug Hunter</option>
+        </select>
+      </div>
       <div class="roster-grid" id="rosterGrid"></div>
     </section>
 
