@@ -12,6 +12,7 @@ const CLAUDE_DIR = path.join(process.env.HOME, '.claude');
 const TEAMS_DIR = path.join(CLAUDE_DIR, 'teams');
 const DESCRIPTIONS_FILE = path.join(__dirname, 'agents.json');
 const PID_DIR = path.join(__dirname, '.pids');
+const UNIFIED_TEAM = 'agent-office';
 
 // Known built-in agent types that have their own definitions
 const KNOWN_AGENT_TYPES = ['trevor', 'luca', 'ellie', 'mateo', 'general-purpose', 'Explore', 'Plan', 'code-reviewer', 'silent-failure-hunter', 'manager'];
@@ -116,27 +117,44 @@ function getRunningAgents() {
           const pid = loadPid(`${teamName}.pid`);
           const processAlive = pid && checkPidAlive(pid);
 
+          // Per-member terminal check: "claude -r <teamName> --agent=<agentType>"
+          let memberTerminalOpen = false;
+          try {
+            const escapedTeam = teamName.replace(/['"\\$`;]/g, '');
+            const escapedAgent = member.agentType.replace(/['"\\$`;]/g, '');
+            const output = execSync(
+              `ps aux 2>/dev/null | grep -F "claude -r ${escapedTeam}" | grep -F -- "--agent=${escapedAgent}" | grep -v grep`,
+              { stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf8', timeout: 3000 }
+            );
+            memberTerminalOpen = output && output.trim().length > 0;
+          } catch { /* no match */ }
+
           // Determine status: terminal open vs background process vs disconnected
-          let sessionActive = processAlive || terminalOpen;
+          let sessionActive = processAlive || terminalOpen || memberTerminalOpen;
           let statusDetail = 'Not connected';
-          if (terminalOpen && processAlive) {
+          let isLaunched = terminalOpen || memberTerminalOpen;
+          if (isLaunched && processAlive) {
             statusDetail = 'Answering — active session';
-          } else if (terminalOpen) {
+          } else if (isLaunched) {
             statusDetail = 'Idle — Terminal open, awaiting input';
           } else if (processAlive) {
             statusDetail = 'Answering — background process';
+          } else if (config.leaderAgentType) {
+            statusDetail = 'Idle — Awaiting launch';
           }
 
+          const mainAgentNames = ['trevor', 'luca', 'ellie', 'mateo'];
           agents.push({
             id: agentId,
             name: member.name,
             teamName,
             type: member.agentType || 'general-purpose',
+            category: mainAgentNames.includes(member.name.toLowerCase()) ? 'main-agent' : 'sub-agent',
             description: description || '',
             sessionActive,
             statusDetail,
             processAlive,
-            isLaunched: terminalOpen
+            isLaunched
           });
         }
       }
@@ -208,31 +226,53 @@ function buildEnvScript() {
   };
 }
 
-// Check if Claude CLI works (detects context management incompatibility)
-let claudeCompatible = null; // null = not yet checked, boolean = cached
-
-function checkClaudeCompatibility() {
-  if (claudeCompatible !== null) return claudeCompatible;
-  const env = buildEnvScript();
-  try {
-    execSync(`"${env.CLAUDE_BIN}" --version`, { stdio: 'pipe' });
-    // Try a quick API call to see if context management works
-    execSync(
-      `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS='${env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS}' ` +
-      `ANTHROPIC_BASE_URL='${env.ANTHROPIC_BASE_URL}' ` +
-      `ANTHROPIC_AUTH_TOKEN='${env.ANTHROPIC_AUTH_TOKEN}' ` +
-      `ANTHROPIC_API_KEY='${env.ANTHROPIC_API_KEY}' ` +
-      `ANTHROPIC_MODEL='${env.ANTHROPIC_MODEL}' ` +
-      `CLAUDECODE='' "${env.CLAUDE_BIN}" --print -p "hi" 2>&1`,
-      { stdio: 'pipe', timeout: 15000 }
-    );
-    claudeCompatible = true;
-    return true;
-  } catch (e) {
-    claudeCompatible = false;
-    return false;
+function checkClaudeCompatibility(callback) {
+  if (claudeCompatible !== null) {
+    if (callback) callback(claudeCompatible);
+    return claudeCompatible;
   }
+
+  const env = buildEnvScript();
+
+  // Start async check — don't block the event loop
+  setTimeout(() => {
+    try {
+      execSync(`"${env.CLAUDE_BIN}" --version`, { stdio: 'pipe', timeout: 5000 });
+      execSync(
+        `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS='${env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS}' ` +
+        `ANTHROPIC_BASE_URL='${env.ANTHROPIC_BASE_URL}' ` +
+        `ANTHROPIC_AUTH_TOKEN='${env.ANTHROPIC_AUTH_TOKEN}' ` +
+        `ANTHROPIC_API_KEY='${env.ANTHROPIC_API_KEY}' ` +
+        `ANTHROPIC_MODEL='${env.ANTHROPIC_MODEL}' ` +
+        `CLAUDECODE='' "${env.CLAUDE_BIN}" --print -p "hi" 2>&1`,
+        { stdio: 'pipe', timeout: 10000 }
+      );
+      claudeCompatible = true;
+      console.log(`Claude CLI compatible with API: true`);
+    } catch (e) {
+      claudeCompatible = false;
+      console.log(`Claude CLI compatible with API: false`);
+      console.log('  → Agents register as dashboard entries. Resume manually with: claude -r agent-<name>');
+    }
+    if (callback) callback(claudeCompatible);
+  }, 0);
+
+  // Return optimistic default so callers can proceed
+  return true;
 }
+
+// Start server immediately, run compatibility check asynchronously
+const PORT = 3100;
+app.listen(PORT, () => {
+  console.log(`Agent Office Dashboard running on http://localhost:${PORT}`);
+  console.log(`Teams directory: ${TEAMS_DIR}`);
+  // Deferred: checkClaudeCompatibility runs async, does not block startup
+  checkClaudeCompatibility((result) => {
+    if (!result) {
+      console.log('Note: Using OpenRouter mode — agents register as dashboard entries.');
+    }
+  });
+});
 
 // Parse CLI args string into array (handles --flag and "quoted strings")
 function parseCliArgs(input) {
@@ -547,6 +587,8 @@ function openTerminalTab(title, command) {
 app.post('/api/launch/:name', (req, res) => {
   try {
     const teamName = req.params.name;
+    const agentIdentifier = req.query.agent; // optional: specific member name
+
     const teamConfigPath = path.join(TEAMS_DIR, teamName, 'config.json');
 
     if (!fs.existsSync(teamConfigPath)) {
@@ -554,12 +596,32 @@ app.post('/api/launch/:name', (req, res) => {
     }
 
     const config = JSON.parse(fs.readFileSync(teamConfigPath, 'utf8'));
-    const member = config.members[0];
     const claudePath = path.join(process.env.HOME, '.local', 'bin', 'claude');
-    const agentName = member.name.toLowerCase();
     const customAgents = ['trevor', 'luca', 'ellie', 'mateo'];
+
+    // If agent identifier provided, launch only that member
+    let membersToLaunch;
+    if (agentIdentifier) {
+      const member = config.members.find(
+        m => m.name.toLowerCase() === agentIdentifier.toLowerCase() || m.agentType.toLowerCase() === agentIdentifier.toLowerCase()
+      );
+      if (!member) {
+        return res.status(404).json({ success: false, error: `Agent "${agentIdentifier}" not found in team "${teamName}"` });
+      }
+      membersToLaunch = [member];
+    } else {
+      // Legacy: single-member team, launch the only member
+      membersToLaunch = config.members.length === 1 ? [config.members[0]] : [];
+    }
+
+    if (membersToLaunch.length === 0) {
+      return res.status(400).json({ success: false, error: 'No specific agent to launch. Use /api/launch-all instead.' });
+    }
+
+    const member = membersToLaunch[0];
+    const agentName = member.name.toLowerCase();
     let cmd = `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 ${claudePath} -r ${teamName}`;
-    if (customAgents.includes(agentName)) cmd += ` --agent=${agentName}`;
+    if (customAgents.includes(member.agentType)) cmd += ` --agent=${member.agentType}`;
     cmd += ' --permission-mode acceptEdits';
 
     // Mark as launched so status check can see this terminal tab was opened
@@ -571,7 +633,6 @@ app.post('/api/launch/:name', (req, res) => {
     if (opened) {
       res.json({ success: true, message: `${member.name} opened in Terminal` });
     } else {
-      // Fallback: return the command so the user can run it manually
       res.json({ success: true, message: `${member.name} — Terminal open failed, run manually:`, command: cmd });
     }
   } catch (err) {
@@ -589,15 +650,17 @@ app.post('/api/launch-all', (req, res) => {
     }
 
     const claudePath = path.join(process.env.HOME, '.local', 'bin', 'claude');
-    const projectDir = __dirname;
+    const customAgents = ['trevor', 'luca', 'ellie', 'mateo'];
 
-    // Mark all agents as being launched
-    for (const agent of agents) {
-      const teamConfigPath = path.join(TEAMS_DIR, agent.teamName, 'config.json');
+    // Mark all agents as being launched on their team configs
+    const teamNames = new Set(agents.map(a => a.teamName));
+    for (const t of teamNames) {
+      const teamConfigPath = path.join(TEAMS_DIR, t, 'config.json');
       try {
         const config = JSON.parse(fs.readFileSync(teamConfigPath, 'utf8'));
-        const member = config.members[0];
-        member.backgroundId = `${agent.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}-launched-${Date.now()}`;
+        for (const member of config.members) {
+          member.backgroundId = `${member.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}-launched-${Date.now()}`;
+        }
         fs.writeFileSync(teamConfigPath, JSON.stringify(config, null, 2));
       } catch {}
     }
@@ -608,10 +671,8 @@ app.post('/api/launch-all', (req, res) => {
     function openNext(i) {
       if (i >= agents.length) return;
       const agent = agents[i];
-      const agentName = agent.name.toLowerCase();
-      const customAgents = ['trevor', 'luca', 'ellie', 'mateo'];
       let cmd = `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 ${claudePath} -r ${agent.teamName}`;
-      if (customAgents.includes(agentName)) cmd += ` --agent=${agentName}`;
+      if (customAgents.includes(agent.type)) cmd += ` --agent=${agent.type}`;
       cmd += ' --permission-mode acceptEdits';
 
       openTerminalTab(agent.name, cmd);
