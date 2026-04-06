@@ -3,6 +3,5 @@
   "Mateo": "Debug & Research Agent — receives orders from Trevor, spawns sub-agents for root cause analysis, systematic and persistent",
   "luca": "Backend Node.js specialist — API routes, Express server logic, database interactions",
   "ellie": "Frontend UI/UX specialist",
-  "yoda": "Git specialist — commits, branches, and pull requests with conventional commits",
-  "test-agent": "test desc"
+  "yoda": "Git specialist — commits, branches, and pull requests with conventional commits"
 }
