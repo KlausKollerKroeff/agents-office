@@ -14,7 +14,7 @@ const DESCRIPTIONS_FILE = path.join(__dirname, 'agents.json');
 const PID_DIR = path.join(__dirname, '.pids');
 
 // Known built-in agent types that have their own definitions
-const KNOWN_AGENT_TYPES = ['trevor', 'luca', 'ellie', 'general-purpose', 'Explore', 'Plan', 'code-reviewer', 'silent-failure-hunter', 'manager'];
+const KNOWN_AGENT_TYPES = ['trevor', 'luca', 'ellie', 'mateo', 'general-purpose', 'Explore', 'Plan', 'code-reviewer', 'silent-failure-hunter', 'manager'];
 
 if (!fs.existsSync(PID_DIR)) fs.mkdirSync(PID_DIR, { recursive: true });
 
@@ -556,9 +556,10 @@ app.post('/api/launch/:name', (req, res) => {
     const config = JSON.parse(fs.readFileSync(teamConfigPath, 'utf8'));
     const member = config.members[0];
     const claudePath = path.join(process.env.HOME, '.local', 'bin', 'claude');
-    const isTrevor = member.name.toLowerCase() === 'trevor';
+    const agentName = member.name.toLowerCase();
+    const customAgents = ['trevor', 'luca', 'ellie', 'mateo'];
     let cmd = `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 ${claudePath} -r ${teamName}`;
-    if (isTrevor) cmd += ' --agent=trevor';
+    if (customAgents.includes(agentName)) cmd += ` --agent=${agentName}`;
     cmd += ' --permission-mode acceptEdits';
 
     // Mark as launched so status check can see this terminal tab was opened
@@ -607,9 +608,10 @@ app.post('/api/launch-all', (req, res) => {
     function openNext(i) {
       if (i >= agents.length) return;
       const agent = agents[i];
-      const isTrevor = agent.name.toLowerCase() === 'trevor';
+      const agentName = agent.name.toLowerCase();
+      const customAgents = ['trevor', 'luca', 'ellie', 'mateo'];
       let cmd = `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 ${claudePath} -r ${agent.teamName}`;
-      if (isTrevor) cmd += ' --agent=trevor';
+      if (customAgents.includes(agentName)) cmd += ` --agent=${agentName}`;
       cmd += ' --permission-mode acceptEdits';
 
       openTerminalTab(agent.name, cmd);
