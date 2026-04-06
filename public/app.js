@@ -132,6 +132,10 @@ function getTileAt(x, y) {
 
 // Agent sprites on the map — placed by WORK STATUS, with type as sub-category
 function getAgentPositions() {
+  // Only permanent agents appear on the canvas map
+  const permanentNames = new Set(['trevor', 'luca', 'ellie', 'mateo', 'yoda']);
+  const mapAgents = agents.filter(a => permanentNames.has(a.name.toLowerCase()));
+
   const positions = [];
 
   // Desk tiles — where WORKING agents sit
@@ -153,9 +157,9 @@ function getAgentPositions() {
   const walkRows    = [5, 9, 13];
 
   // Categorize by work status
-  const workingAgents = agents.filter(a => a.sessionActive || a.processAlive);
-  const idleAgents    = agents.filter(a => a.isLaunched && !a.processAlive);
-  const offlineAgents = agents.filter(a => !a.sessionActive && !a.isLaunched);
+  const workingAgents = mapAgents.filter(a => a.sessionActive || a.processAlive);
+  const idleAgents    = mapAgents.filter(a => a.isLaunched && !a.processAlive);
+  const offlineAgents = mapAgents.filter(a => !a.sessionActive && !a.isLaunched);
 
   const skipName = drag.agent ? new Set([drag.agent.name]) : new Set();
 
@@ -178,7 +182,7 @@ function getAgentPositions() {
   const officeTypes = typeSet(['trevor', 'manager', 'luca', 'ellie', 'general-purpose']);
   const meetingTypes = typeSet(['Plan', 'architect', 'mateo']);
   const restTypes = typeSet(['code-reviewer', 'reviewer', 'silent-failure-hunter']);
-  const tennisTypes = typeSet(['Explora', 'explorer']);
+  const tennisTypes = typeSet(['Explore', 'explorer']);
 
   workingAgents.filter(a => officeTypes.has(a.type)).forEach((a, i) => deskFor(a, i, officeCols, officeRows));
   workingAgents.filter(a => meetingTypes.has(a.type)).forEach((a, i) => deskFor(a, i, meetingCols, meetingRows));
@@ -1867,6 +1871,429 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     hireModal.classList.remove('visible');
     detailModal.classList.remove('visible');
+    closeMiniGames();
+  }
+});
+
+// ============================================================
+// MINIGAME — Tennis (Pong-style)
+// ============================================================
+let miniGameActive = null; // 'tennis' | 'basketball' | null
+const tennisCanvas = document.getElementById('tennisCanvas');
+const tCtx = tennisCanvas.getContext('2d');
+let tennisState = null;
+
+function startTennis() {
+  miniGameActive = 'tennis';
+  document.getElementById('tennisGame').classList.add('visible');
+  tennisState = {
+    paddleX: tennisCanvas.width / 2 - 30,
+    paddleY: tennisCanvas.height - 20,
+    paddleW: 60,
+    ballX: tennisCanvas.width / 2,
+    ballY: 30,
+    ballVX: 2,
+    ballVY: 2,
+    aiX: tennisCanvas.width / 2 - 30,
+    score: 0,
+    aiScore: 0,
+    running: true
+  };
+  // Hide instructions after 3s
+  setTimeout(() => {
+    const el = document.getElementById('tennisInstructions');
+    if (el) el.style.opacity = '0';
+  }, 3000);
+  runTennis();
+}
+
+function runTennis() {
+  if (!tennisState || !tennisState.running) return;
+  const s = tennisState;
+  const cw = tennisCanvas.width, ch = tennisCanvas.height;
+
+  // Handle input
+  const spd = 5;
+  if (keys['a'] || keys['arrowleft']) s.paddleX -= spd;
+  if (keys['d'] || keys['arrowright']) s.paddleX += spd;
+  // Constrain paddle
+  s.paddleX = Math.max(0, Math.min(cw - s.paddleW, s.paddleX));
+  // AI opponent
+  const aiCenter = s.aiX + s.paddleW / 2;
+  if (aiCenter < s.ballX - 8) s.aiX += 3;
+  else if (aiCenter > s.ballX + 8) s.aiX -= 2;
+  s.aiX = Math.max(0, Math.min(cw - s.paddleW, s.aiX));
+
+  // Move ball
+  s.ballX += s.ballVX;
+  s.ballY += s.ballVY;
+
+  // Wall bounce
+  if (s.ballX <= 4 || s.ballX >= cw - 4) s.ballVX *= -1;
+  // Top wall
+  if (s.ballY <= 4) s.ballVY *= -1;
+
+  // AI paddle (top)
+  if (s.ballY <= 16 && s.ballX >= s.aiX && s.ballX <= s.aiX + s.paddleW && s.ballVY < 0) {
+    s.ballVY *= -1.05;
+    s.ballY = 18;
+  }
+
+  // Player paddle (bottom)
+  if (s.ballY >= ch - 24 && s.ballX >= s.paddleX && s.ballX <= s.paddleX + s.paddleW && s.ballVY > 0) {
+    s.ballVY *= -1;
+    // Add english based on where ball hits
+    const hit = (s.ballX - (s.paddleX + s.paddleW / 2)) / (s.paddleW / 2);
+    s.ballVX = hit * 3;
+    s.ballVY = -Math.abs(s.ballVY);
+    s.ballY = ch - 25;
+    s.score++;
+    document.getElementById('tennisScore').textContent = s.score + ' - ' + s.aiScore;
+  }
+
+  // Ball below player → AI scores
+  if (s.ballY >= ch + 10) {
+    s.aiScore++;
+    document.getElementById('tennisScore').textContent = s.score + ' - ' + s.aiScore;
+    resetTennisBall(s, 1);
+  }
+
+  // AI misses top → player scores point shown
+  if (s.ballY < -10) {
+    s.score++;
+    document.getElementById('tennisScore').textContent = s.score + ' - ' + s.aiScore;
+    resetTennisBall(s, -1);
+  }
+
+  // Draw
+  tCtx.fillStyle = '#2e7d32';
+  tCtx.fillRect(0, 0, cw, ch);
+  // Court lines
+  tCtx.strokeStyle = 'rgba(255,255,255,0.3)';
+  tCtx.lineWidth = 1;
+  tCtx.strokeRect(4, 4, cw - 8, ch - 8);
+  tCtx.beginPath();
+  tCtx.moveTo(4, ch / 2);
+  tCtx.lineTo(cw - 4, ch / 2);
+  tCtx.stroke();
+  // Net
+  tCtx.setLineDash([4, 4]);
+  tCtx.strokeStyle = '#fff';
+  tCtx.lineWidth = 2;
+  tCtx.beginPath();
+  tCtx.moveTo(0, ch / 2);
+  tCtx.lineTo(cw, ch / 2);
+  tCtx.stroke();
+  tCtx.setLineDash([]);
+
+  // AI paddle (top)
+  tCtx.fillStyle = '#880000';
+  tCtx.fillRect(s.aiX, 8, s.paddleW, 8);
+  // Player paddle (bottom)
+  tCtx.fillStyle = '#e53935';
+  tCtx.fillRect(s.paddleX, s.paddleY, s.paddleW, 8);
+  tCtx.fillStyle = '#c62828';
+  tCtx.fillRect(s.paddleX + 2, s.paddleY + 2, s.paddleW - 4, 4);
+
+  // Ball (tennis ball yellow)
+  tCtx.fillStyle = '#c8e632';
+  tCtx.beginPath();
+  tCtx.arc(s.ballX, s.ballY, 6, 0, Math.PI * 2);
+  tCtx.fill();
+  tCtx.strokeStyle = '#a8c42a';
+  tCtx.lineWidth = 1.5;
+  tCtx.stroke();
+
+  requestAnimationFrame(runTennis);
+}
+
+function resetTennisBall(s, dir) {
+  s.ballX = tennisCanvas.width / 2 + (Math.random() - 0.5) * 40;
+  s.ballY = dir > 0 ? 30 : tennisCanvas.height - 30;
+  s.ballVX = (Math.random() - 0.5) * 4;
+  s.ballVY = dir * (2 + Math.random());
+}
+
+// ============================================================
+// MINIGAME — Basketball (Free throw)
+// ============================================================
+const bbCanvas = document.getElementById('basketballCanvas');
+const bbCtx = bbCanvas.getContext('2d');
+let bbState = null;
+
+function startBasketball() {
+  miniGameActive = 'basketball';
+  document.getElementById('basketballGame').classList.add('visible');
+  bbState = {
+    ballX: 80,
+    ballY: bbCanvas.height - 50,
+    hoopX: bbCanvas.width - 70,
+    hoopY: 100,
+    hoopW: 40,
+    score: 0,
+    aiming: false,
+    aimStartX: 80,
+    aimStartY: bbCanvas.height - 50,
+    aimEndX: 0,
+    aimEndY: 0,
+    inFlight: false,
+    trailPositions: [],
+    power: 0,
+    gravity: 0.25
+  };
+  setTimeout(() => {
+    const el = document.getElementById('basketballInstructions');
+    if (el) el.style.opacity = '0';
+  }, 3000);
+  runBasketball();
+}
+
+function runBasketball() {
+  if (!bbState) return;
+  const s = bbState;
+  const cw = bbCanvas.width, ch = bbCanvas.height;
+
+  // Physics update for ball in flight
+  if (s.inFlight) {
+    const vel = s.ballVX;
+    const vely = s.ballVY || 0;
+    s.ballX += vel;
+    s.ballY += vely;
+    s.ballVY = (s.ballVY || 0) + s.gravity;
+    s.trailPositions.push({ x: s.ballX, y: s.ballY, age: 0 });
+    if (s.trailPositions.length > 15) s.trailPositions.shift();
+    s.trailPositions.forEach(t => t.age++);
+
+    // Check if ball reaches hoop area
+    if (s.ballX >= s.hoopX && s.ballX <= s.hoopX + s.hoopW && s.ballY >= s.hoopY - 5 && s.ballY <= s.hoopY + 10 && (s.ballVY || 0) > 0) {
+      s.score++;
+      document.getElementById('basketballScore').textContent = s.score + ' PTS';
+      showBasketballFlash('#4caf50');
+      resetBasketballBall(s);
+    }
+
+    // Ball off screen or hit ground
+    if (s.ballY > ch + 20 || s.ballX < -20 || s.ballX > cw + 20) {
+      showBasketballFlash('#ff001e');
+      resetBasketballBall(s);
+    }
+  }
+
+  // Draw
+  bbCtx.fillStyle = '#1a1a2e';
+  bbCtx.fillRect(0, 0, cw, ch);
+
+  // Court floor
+  bbCtx.fillStyle = '#c4813b';
+  bbCtx.fillRect(0, ch - 16, cw, 16);
+
+  // Wood lines
+  bbCtx.strokeStyle = 'rgba(0,0,0,0.08)';
+  bbCtx.lineWidth = 1;
+  for (let px = 0; px < cw; px += 32) {
+    bbCtx.beginPath(); bbCtx.moveTo(px, 0); bbCtx.lineTo(px, ch); bbCtx.stroke();
+  }
+
+  // Backboard
+  bbCtx.fillStyle = '#c62828';
+  bbCtx.fillRect(s.hoopX - 4, s.hoopY - 28, 4, 56);
+
+  // Hoop rim
+  bbCtx.strokeStyle = '#ff6f00';
+  bbCtx.lineWidth = 3;
+  bbCtx.beginPath();
+  bbCtx.moveTo(s.hoopX, s.hoopY);
+  bbCtx.lineTo(s.hoopX + s.hoopW, s.hoopY);
+  bbCtx.stroke();
+
+  // Net (dangling lines)
+  bbCtx.strokeStyle = '#fff';
+  bbCtx.lineWidth = 0.8;
+  for (let nx = 6; nx < s.hoopW; nx += 8) {
+    const droop = 6 + Math.sin(Date.now() / 500 + nx) * 2;
+    bbCtx.beginPath();
+    bbCtx.moveTo(s.hoopX + nx, s.hoopY);
+    bbCtx.lineTo(s.hoopX + nx + 4 + (nx % 12), s.hoopY + 22 + droop);
+    bbCtx.lineTo(s.hoopX + nx + 8, s.hoopY);
+    bbCtx.stroke();
+  }
+
+  // Ball trail
+  s.trailPositions.forEach((t, i) => {
+    const alpha = 0.4 - (t.age / 15) * 0.4;
+    const size = 5 - (t.age / 15) * 3;
+    bbCtx.fillStyle = `rgba(255, 109, 0, ${alpha})`;
+    bbCtx.beginPath();
+    bbCtx.arc(t.x, t.y, size, 0, Math.PI * 2);
+    bbCtx.fill();
+  });
+
+  // Ball
+  bbCtx.fillStyle = '#ff6d00';
+  bbCtx.beginPath();
+  bbCtx.arc(s.ballX, s.ballY, 10, 0, Math.PI * 2);
+  bbCtx.fill();
+  bbCtx.strokeStyle = '#e65100';
+  bbCtx.lineWidth = 2;
+  bbCtx.stroke();
+  // Cross lines on ball
+  bbCtx.beginPath();
+  bbCtx.moveTo(s.ballX - 7, s.ballY);
+  bbCtx.lineTo(s.ballX + 7, s.ballY);
+  bbCtx.stroke();
+  bbCtx.beginPath();
+  bbCtx.moveTo(s.ballX, s.ballY - 7);
+  bbCtx.lineTo(s.ballX, s.ballY + 7);
+  bbCtx.stroke();
+
+  // Player silhouette
+  bbCtx.fillStyle = '#ff0000';
+  bbCtx.fillRect(s.ballX - 14, s.ballY + 14, 8, 20);
+  bbCtx.fillRect(s.ballX + 6, s.ballY + 14, 8, 20);
+
+  // Aim line when aiming
+  if (s.aiming) {
+    bbCtx.strokeStyle = 'rgba(255,196,0,0.6)';
+    bbCtx.lineWidth = 2;
+    bbCtx.setLineDash([6, 4]);
+    bbCtx.beginPath();
+    bbCtx.moveTo(s.aimStartX, s.aimStartY);
+    bbCtx.lineTo(s.aimEndX, s.aimEndY);
+    bbCtx.stroke();
+    bbCtx.setLineDash([]);
+
+    // Power indicator
+    const dist = Math.sqrt((s.aimEndX - s.aimStartX) ** 2 + (s.aimEndY - s.aimStartY) ** 2);
+    const power = Math.min(dist / 200, 1);
+    bbCtx.fillStyle = `hsl(${120 - power * 120}, 100%, 50%)`;
+    bbCtx.fillRect(10, ch - 30, 150 * power, 8);
+    bbCtx.strokeStyle = '#fff';
+    bbCtx.lineWidth = 1;
+    bbCtx.strokeRect(10, ch - 30, 150, 8);
+  }
+
+  // Score text
+  bbCtx.fillStyle = '#ffc400';
+  bbCtx.font = '20px "Press Start 2P", monospace';
+  bbCtx.textAlign = 'center';
+  bbCtx.fillText('Score: ' + s.score, cw / 2, 30);
+  bbCtx.font = '10px "Press Start 2P", monospace';
+  bbCtx.fillStyle = '#888';
+  bbCtx.fillText('Click + drag to aim and shoot', cw / 2, ch - 40);
+  bbCtx.textAlign = 'start';
+
+  requestAnimationFrame(runBasketball);
+}
+
+function resetBasketballBall(s) {
+  s.ballX = 80;
+  s.ballY = bbCanvas.height - 50;
+  s.ballVX = 0;
+  s.ballVY = 0;
+  s.inFlight = false;
+  s.trailPositions = [];
+  s.aiming = false;
+}
+
+function shootBasketball() {
+  const s = bbState;
+  if (!s || s.inFlight) return;
+  const dx = s.aimEndX - s.aimStartX;
+  const dy = s.aimEndY - s.aimStartY;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const power = Math.min(dist / 200, 1);
+  const angle = Math.atan2(dy, dx);
+  const speed = 6 + power * 8;
+  s.ballVX = Math.cos(angle) * speed;
+  s.ballVY = Math.sin(angle) * speed;
+  s.inFlight = true;
+}
+
+function showBasketballFlash(color) {
+  const canvas = bbCanvas;
+  canvas.style.boxShadow = `0 0 30px ${color}`;
+  setTimeout(() => { canvas.style.boxShadow = ''; }, 300);
+}
+
+// Mouse events for basketball
+bbCanvas.addEventListener('mousedown', (e) => {
+  if (!bbState || bbState.inFlight) {
+    if (!bbState) return;
+    if (!bbState.inFlight) shootBasketball();
+    return;
+  }
+  const rect = bbCanvas.getBoundingClientRect();
+  const scaleX = bbCanvas.width / rect.width;
+  const scaleY = bbCanvas.height / rect.height;
+  bbState.aimStartX = (e.clientX - rect.left) * scaleX;
+  bbState.aimStartY = (e.clientY - rect.top) * scaleY;
+  bbState.aimEndX = bbState.aimStartX;
+  bbState.aimEndY = bbState.aimStartY;
+  bbState.aiming = true;
+});
+
+bbCanvas.addEventListener('mousemove', (e) => {
+  if (bbState && bbState.aiming) {
+    const rect = bbCanvas.getBoundingClientRect();
+    const scaleX = bbCanvas.width / rect.width;
+    const scaleY = bbCanvas.height / rect.height;
+    bbState.aimEndX = (e.clientX - rect.left) * scaleX;
+    bbState.aimEndY = (e.clientY - rect.top) * scaleY;
+  }
+});
+
+bbCanvas.addEventListener('mouseup', () => {
+  if (bbState && bbState.aiming) {
+    shootBasketball();
+    bbState.aiming = false;
+  }
+});
+
+// ============================================================
+// MINIGAME CONTROLS
+// ============================================================
+function openMiniGame(type) {
+  if (type === 'tennis') {
+    startTennis();
+  } else if (type === 'basketball') {
+    startBasketball();
+  }
+}
+
+function closeMiniGames() {
+  if (miniGameActive === 'tennis' && tennisState) {
+    tennisState.running = false;
+  }
+  miniGameActive = null;
+  tennisState = null;
+  bbState = null;
+  document.getElementById('tennisGame').classList.remove('visible');
+  document.getElementById('basketballGame').classList.remove('visible');
+}
+
+document.getElementById('closeTennis').onclick = closeMiniGames;
+document.getElementById('closeBasketball').onclick = closeMiniGames;
+
+// E key opens mini-game when standing on court door tiles
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'e' || e.key === 'E') {
+    const tileAtPlayer = getTileAt(Math.floor(player.x + 0.5), Math.floor(player.y + 0.5));
+    if (tileAtPlayer === 6) {
+      e.preventDefault();
+      // Determine which court the player is in
+      const px = Math.floor(player.x);
+      const py = Math.floor(player.y);
+      // Tennis court doors: y=14, cols 10-11 and 14-15; court area x:7-17, y:14-23
+      if (px >= 7 && px <= 17 && py >= 13 && py <= 24) {
+        openMiniGame('tennis');
+        return;
+      }
+      // Basketball court doors: y=13, cols 27-29; court area x:23-33, y:13-20
+      if (px >= 22 && px <= 33 && py >= 12 && py <= 21) {
+        openMiniGame('basketball');
+        return;
+      }
+    }
   }
 });
 
