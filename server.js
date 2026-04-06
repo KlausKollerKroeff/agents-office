@@ -1,6 +1,7 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { exec, execSync, spawn } = require('child_process');
 
 const app = express();
@@ -61,6 +62,21 @@ function loadPid(filename) {
   }
 }
 
+// Check if Terminal has an open tab running "claude -r <teamName>"
+function checkClaudeTerminalProcess(teamName) {
+  try {
+    // Escape dangerous shell characters from teamName
+    const escapedName = teamName.replace(/['"\\$`;]/g, '');
+    const output = execSync(
+      `ps aux 2>/dev/null | grep -F "claude -r ${escapedName}" | grep -v grep`,
+      { stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf8', timeout: 3000 }
+    );
+    return output && output.trim().length > 0;
+  } catch (e) {
+    return false;
+  }
+}
+
 // Get all running agents from teams config files
 function getRunningAgents() {
   const agents = [];
@@ -76,6 +92,9 @@ function getRunningAgents() {
       const config = JSON.parse(fs.readFileSync(teamConfigPath, 'utf8'));
 
       if (config.members && config.members.length > 0) {
+        // Detect if claude is running in Terminal for this team
+        const terminalOpen = checkClaudeTerminalProcess(teamName);
+
         for (const member of config.members) {
           const agentId = member.agentId;
 
@@ -93,13 +112,19 @@ function getRunningAgents() {
             description = config.description;
           }
 
-          const backgroundId = member.backgroundId || teamName;
-
-          // Check if process is alive
-          let sessionActive = false;
+          // Check PID from wake-spawned background process
           const pid = loadPid(`${teamName}.pid`);
-          if (pid && checkPidAlive(pid)) {
-            sessionActive = true;
+          const processAlive = pid && checkPidAlive(pid);
+
+          // Determine status: terminal open vs background process vs disconnected
+          let sessionActive = processAlive || terminalOpen;
+          let statusDetail = 'Not connected';
+          if (terminalOpen && processAlive) {
+            statusDetail = 'Answering — active session';
+          } else if (terminalOpen) {
+            statusDetail = 'Idle — Terminal open, awaiting input';
+          } else if (processAlive) {
+            statusDetail = 'Answering — background process';
           }
 
           agents.push({
@@ -108,7 +133,10 @@ function getRunningAgents() {
             teamName,
             type: member.agentType || 'general-purpose',
             description: description || '',
-            sessionActive
+            sessionActive,
+            statusDetail,
+            processAlive,
+            isLaunched: terminalOpen
           });
         }
       }
@@ -482,43 +510,36 @@ app.delete('/api/teams/:name', (req, res) => {
 });
 
 // Open a new Terminal.app tab and run a command via osascript
-// Writes command to .sh + AppleScript to temp files to avoid all quoting issues
+// Writes a temp AppleScript file to avoid ALL shell quoting/injection issues
 function openTerminalTab(title, command) {
-  const tmpDir = path.join(__dirname, '.tmp');
-  if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+  const projectDir = __dirname;
+  const cmdWithCd = `cd '${projectDir.replace(/'/g, "'\\''")}' && ${command}`;
 
-  // Write the actual command to a shell script
-  const shellFile = path.join(tmpDir, `launch-${Date.now()}.sh`);
-  fs.writeFileSync(shellFile, `#!/bin/bash\necho "=== Agent: ${title} ==="\n${command}\n`, 'utf8');
-  fs.chmodSync(shellFile, '755');
+  // Escape for AppleScript string literals (only backslash and double-quote matter inside "...")
+  const appleScriptEscape = (s) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 
-  // Escape the path for AppleScript (no quotes needed if no spaces in tmp path)
-  const safeShellPath = shellFile.replace(/"/g, '\\"').replace(/\\/g, '\\\\');
-  const safeTitle = title.replace(/"/g, '\\"');
+  const appleScript = [
+    `tell application "Terminal"`,
+    `    activate`,
+    `    set newWin to do script "${appleScriptEscape(cmdWithCd)}"`,
+    `    delay 0.3`,
+    `    set win to first window whose tab 1 contains newWin`,
+    `    set custom title of win to "${appleScriptEscape(title)}"`,
+    `    set title displays custom title of win to true`,
+    `end tell`
+  ].join('\n');
 
-  const appleScript = `tell application "Terminal"
-    set winId to do script "${safeShellPath}"
-    set custom title of winId to "${safeTitle}"
-    set title displays custom title of winId to true
-    set miniaturized of winId to true
-end tell
-`;
-  const scriptFile = path.join(tmpDir, `launch-${Date.now()}.scpt`);
-  fs.writeFileSync(scriptFile, appleScript, 'utf8');
-
+  // Write to a temp .scpt file — avoids ALL shell quoting problems
+  const tmpScpt = path.join(os.tmpdir(), `agent-office-${Date.now()}.scpt`);
   try {
-    execSync(`osascript "${scriptFile}"`, { stdio: 'pipe', timeout: 10000 });
-    // Clean up after a delay (Terminal has already sourced the files)
-    setTimeout(() => {
-      try { fs.unlinkSync(shellFile); } catch {}
-      try { fs.unlinkSync(scriptFile); } catch {}
-    }, 10000);
+    fs.writeFileSync(tmpScpt, appleScript, 'utf8');
+    execSync(`osascript '${tmpScpt}'`, { stdio: 'pipe', timeout: 10000 });
     return true;
   } catch (e) {
     console.error(`Failed to open Terminal for ${title}: ${e.message}`);
-    try { fs.unlinkSync(shellFile); } catch {}
-    try { fs.unlinkSync(scriptFile); } catch {}
     return false;
+  } finally {
+    try { fs.unlinkSync(tmpScpt); } catch {}
   }
 }
 
@@ -536,11 +557,11 @@ app.post('/api/launch/:name', (req, res) => {
     const member = config.members[0];
     const claudePath = path.join(process.env.HOME, '.local', 'bin', 'claude');
     const isTrevor = member.name.toLowerCase() === 'trevor';
-    let cmd = `cd "${__dirname}" && CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 ${claudePath} -r ${teamName}`;
+    let cmd = `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 ${claudePath} -r ${teamName}`;
     if (isTrevor) cmd += ' --agent=trevor';
     cmd += ' --permission-mode acceptEdits';
 
-    // Mark as launched
+    // Mark as launched so status check can see this terminal tab was opened
     member.backgroundId = `${member.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}-launched-${Date.now()}`;
     fs.writeFileSync(teamConfigPath, JSON.stringify(config, null, 2));
 
@@ -557,33 +578,6 @@ app.post('/api/launch/:name', (req, res) => {
   }
 });
 
-// API: Generate launch script that opens all agents in Terminal.app
-app.get('/api/launch-script', (req, res) => {
-  const agents = getRunningAgents();
-  if (agents.length === 0) {
-    return res.status(204).send('No agents to launch');
-  }
-
-  const claudePath = path.join(process.env.HOME, '.local', 'bin', 'claude');
-
-  let script = `#!/bin/bash\n# Agent Office — Launch All Agents\n`;
-  script += `cd "${__dirname}"\n`;
-  script += `export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1\n\n`;
-
-  agents.forEach((agent) => {
-    const isTrevor = agent.name.toLowerCase() === 'trevor';
-    let cmd = `claude -r ${agent.teamName}`;
-    if (isTrevor) cmd += ' --agent=trevor';
-    cmd += ' --permission-mode acceptEdits';
-    script += `echo "Launching ${agent.name}..." && ${cmd} &\nsleep 0.5\n`;
-  });
-
-  script += `\necho "All agents launched! Press any key to close this window..."\nread -n 1\n`;
-
-  res.setHeader('Content-Type', 'text/plain');
-  res.setHeader('Content-Disposition', 'attachment; filename="launch-agents.command"');
-  res.send(script);
-});
 
 // API: Launch ALL agents — each gets its own Terminal tab (no downloads)
 app.post('/api/launch-all', (req, res) => {
@@ -614,7 +608,7 @@ app.post('/api/launch-all', (req, res) => {
       if (i >= agents.length) return;
       const agent = agents[i];
       const isTrevor = agent.name.toLowerCase() === 'trevor';
-      let cmd = `cd "${projectDir}" && CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 ${claudePath} -r ${agent.teamName}`;
+      let cmd = `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 ${claudePath} -r ${agent.teamName}`;
       if (isTrevor) cmd += ' --agent=trevor';
       cmd += ' --permission-mode acceptEdits';
 

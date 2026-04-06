@@ -514,19 +514,23 @@ function drawAgentSprite(agent, screenX, screenY) {
   // Status indicator (top-right) — colored dot based on session state
   const dotX = screenX + TILE - 6;
   const dotY = screenY - 4;
-  if (agent.sessionActive) {
+  if (agent.processAlive) {
+    // Actively processing
     ctx.fillStyle = '#4caf50';
     ctx.fillRect(dotX, dotY, 5, 5);
-  } else {
-    // Pulsing yellow for registered
-    const pulse = Math.sin(Date.now() / 500) * 0.3 + 0.5;
+  } else if (agent.isLaunched) {
+    // Idle — Terminal open but not actively responding
+    const pulse = Math.sin(Date.now() / 400) * 0.3 + 0.5;
     ctx.globalAlpha = pulse;
     ctx.fillStyle = '#ffc400';
     ctx.fillRect(dotX, dotY, 5, 5);
     ctx.globalAlpha = 1;
-
-    // Zzz for sleeping
-    ctx.fillStyle = '#ffc400';
+  } else {
+    // Not connected — red dot
+    ctx.fillStyle = '#f44336';
+    ctx.fillRect(dotX, dotY, 5, 5);
+    // Zzz for not connected
+    ctx.fillStyle = '#f44336';
     ctx.font = '6px "Press Start 2P", monospace';
     const zOff = Math.sin(Date.now() / 300) * 2;
     ctx.fillText('Z', screenX + TILE, screenY - 8 + zOff);
@@ -764,6 +768,69 @@ function showTooltip(text) {
   tooltipTimer = setTimeout(() => tooltip.classList.add('hidden'), 2000);
 }
 
+// Agent hover status tooltip on canvas
+const agentHoverTooltip = document.createElement('div');
+agentHoverTooltip.className = 'agent-hover-tooltip';
+
+function getStatusBadge(agent) {
+  if (agent.processAlive) return { text: '● Answering', color: '#4caf50' };
+  if (agent.isLaunched) return { text: '~ Idle', color: '#ffc400' };
+  return { text: '○ Not Connected', color: '#f44336' };
+}
+
+function showAgentHoverStatus(agent, mouseX, mouseY) {
+  const badge = getStatusBadge(agent);
+  agentHoverTooltip.innerHTML = `
+    <div class="agent-name">${agent.name}</div>
+    <div class="agent-status" style="color:${badge.color}">${badge.text}</div>
+    <div class="agent-team">${agent.teamName}</div>
+  `;
+  agentHoverTooltip.style.left = (mouseX + 16) + 'px';
+  agentHoverTooltip.style.top = (mouseY - 10) + 'px';
+  agentHoverTooltip.classList.add('visible');
+}
+
+function hideAgentHoverStatus() {
+  agentHoverTooltip.classList.remove('visible');
+}
+
+// Add tooltip element to DOM
+document.querySelector('.office-map-container').appendChild(agentHoverTooltip);
+
+// Track hover on canvas agents
+let hoveredAgent = null;
+canvas.addEventListener('mousemove', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const clickX = e.clientX - rect.left + camX;
+  const clickY = e.clientY - rect.top + camY;
+
+  let found = null;
+  const agentPositions = getAgentPositions();
+  for (const pos of agentPositions) {
+    if (clickX >= pos.x * TILE && clickX < (pos.x + 1) * TILE &&
+        clickY >= pos.y * TILE && clickY < (pos.y + 1) * TILE) {
+      found = pos.agent;
+      break;
+    }
+  }
+
+  if (found) {
+    showAgentHoverStatus(found, e.clientX - canvas.getBoundingClientRect().left, e.clientY - canvas.getBoundingClientRect().top);
+    canvas.style.cursor = 'pointer';
+    hoveredAgent = found;
+  } else {
+    hideAgentHoverStatus();
+    canvas.style.cursor = 'crosshair';
+    hoveredAgent = null;
+  }
+});
+
+canvas.addEventListener('mouseleave', () => {
+  hideAgentHoverStatus();
+  canvas.style.cursor = 'crosshair';
+  hoveredAgent = null;
+});
+
 // Fetch agents from API
 async function fetchAgents() {
   try {
@@ -818,22 +885,31 @@ function renderRoster(agentList) {
     'manager': { label: 'Manager', cls: 'manager', icon: 'T', color: '#ffc400' },
   };
 
+  function getStatusDisplay(agent) {
+    if (agent.processAlive && agent.isLaunched) return { color: '#4caf50', text: 'Answering', cls: 'answering', badge: '●' };
+    if (agent.processAlive) return { color: '#4caf50', text: 'Answering', cls: 'answering', badge: '●' };
+    if (agent.isLaunched) return { color: '#ffc400', text: 'Idle', cls: 'idle', badge: '~' };
+    return { color: '#f44336', text: 'Not Connected', cls: 'offline', badge: '○' };
+  }
+
   grid.innerHTML = agentList.map(agent => {
     const t = typeInfo[agent.type] || { label: 'Agent', cls: 'default', icon: '?', color: '#1ba8b5' };
-    const statusColor = agent.sessionActive ? '#4caf50' : '#ffc400';
-    const statusText = agent.sessionActive ? 'Running' : 'Offline';
+    const s = getStatusDisplay(agent);
     const actionBtn = agent.sessionActive
-      ? '<span style="font-size:0.5rem;color:#4caf50;">✓ Running</span>'
+      ? `<span style="font-size:0.5rem;color:${s.color};">${s.badge} ${s.text}</span>`
       : `<button class="roster-launch-btn" data-team="${agent.teamName}" data-name="${agent.name}">Launch</button>`;
+    const statusTitle = agent.statusDetail || agent.name;
     return `
-      <div style="background:#2a2a4e;margin:4px;border:var(--border-thick) solid var(--panel-border);cursor:pointer;">
+      <div class="roster-card" data-status="${agent.statusDetail}" title="${statusTitle}">
         <div style="display:flex;">
           <div class="roster-avatar-icon">
-            <div class="roster-icon" style="background:${t.color};border-radius:50%;border:2px solid #fff;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:0.8rem;">${t.icon}</div>
+            <div class="roster-icon ${s.cls}" style="background:${t.color};border-radius:50%;border:2px solid #fff;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:0.8rem;position:relative;">${t.icon}
+              <span class="roster-status-dot" style="position:absolute;top:22px;right:4px;width:10px;height:10px;border-radius:50%;border:2px solid #2a2a4e;background:${s.color};"></span>
+            </div>
           </div>
           <div class="roster-info">
             <div class="roster-info-left">
-              <span class="roster-name">${agent.name} <span style="color:${statusColor};font-size:0.6rem;">&#8226; ${statusText}</span></span>
+              <span class="roster-name">${agent.name} <span style="color:${s.color};font-size:0.6rem;">&#8226; ${s.text}</span></span>
               <span class="roster-team">Team: ${agent.teamName}</span>
             </div>
             <span class="roster-badge ${t.cls}">${t.label}</span>

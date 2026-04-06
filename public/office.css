@@ -444,6 +444,52 @@ body {
   line-height: 1.5;
 }
 
+/* Roster card hover */
+.roster-card {
+  background: #2a2a4e;
+  margin: 4px;
+  border: var(--border-thick) solid var(--panel-border);
+  cursor: pointer;
+  position: relative;
+  transition: border-color 0.15s steps(2);
+}
+.roster-card:hover {
+  border-color: var(--poke-yellow);
+}
+
+/* Canvas agent hover tooltip */
+.agent-hover-tooltip {
+  position: absolute;
+  background: #1a1a2e;
+  border: var(--border-thick) solid var(--poke-yellow);
+  padding: 8px 12px;
+  pointer-events: none;
+  z-index: 100;
+  opacity: 0;
+  transition: opacity 0.15s steps(2);
+  box-shadow: 4px 4px 0 rgba(0,0,0,0.5);
+  white-space: nowrap;
+}
+.agent-hover-tooltip.visible {
+  opacity: 1;
+}
+.agent-hover-tooltip .agent-name {
+  font-family: var(--font-title);
+  font-size: 0.6rem;
+  color: #fff;
+  margin-bottom: 4px;
+}
+.agent-hover-tooltip .agent-status {
+  font-family: var(--font-title);
+  font-size: 0.5rem;
+  margin-bottom: 2px;
+}
+.agent-hover-tooltip .agent-team {
+  font-family: var(--font-title);
+  font-size: 0.4rem;
+  color: var(--text-muted);
+}
+
 /* --- Area Headers --- */
 .area-header {
   grid-column: 1 / -1;
