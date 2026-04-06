@@ -19,6 +19,9 @@ const KNOWN_AGENT_TYPES = ['trevor', 'luca', 'ellie', 'mateo', 'general-purpose'
 
 if (!fs.existsSync(PID_DIR)) fs.mkdirSync(PID_DIR, { recursive: true });
 
+// Claude compatibility state (checked async on startup)
+let claudeCompatible = null;
+
 // Load custom agent descriptions
 function loadDescriptions() {
   try {
@@ -702,15 +705,5 @@ app.get('/api/settings', (req, res) => {
   }
 });
 
-const PORT = 3100;
-app.listen(PORT, () => {
-  console.log(`Agent Office Dashboard running on http://localhost:${PORT}`);
-  console.log(`Teams directory: ${TEAMS_DIR}`);
-  const canSpawn = checkClaudeCompatibility();
-  console.log(`Claude CLI compatible with API: ${canSpawn}`);
-  if (!canSpawn) {
-    console.log('  → Agents register as dashboard entries. Resume manually with: claude -r agent-<name>');
-  }
-});
 
 module.exports = app;
