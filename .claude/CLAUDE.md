@@ -31,3 +31,6 @@ end tell
 - Solução: arquivo `.scpt` temporário em `/tmp/` — criado e deletado atomicamente
 
 ## Nunca modificar a função openTerminalTab sem testar
+
+## Garantia de delegação
+- Sempre delegate trabalho aos agentes da equipe (Luca, Ellie, Mateo, Yoda). Nunca faça o trabalho você mesmo, mesmo para mudanças simples. Isso é obrigatório em todas as tarefas.

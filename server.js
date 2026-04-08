@@ -8,6 +8,66 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ── Request Logging Middleware ──────────────────────────────────
+app.use((req, res, next) => {
+  const start = Date.now();
+  const timestamp = new Date().toISOString();
+  const { method, url } = req;
+
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    console.log(`[${timestamp}] ${method} ${url} → ${res.statusCode} (${duration}ms)`);
+  });
+  next();
+});
+
+// ── Rate Limiting Middleware ────────────────────────────────────
+const rateLimitMap = new Map();
+const RATE_LIMIT_WINDOW_MS = 60_000;  // 1 minute window
+const RATE_LIMIT_MAX = 120;           // max requests per window per IP
+
+function getRateLimitInfo(ip) {
+  const now = Date.now();
+  if (!rateLimitMap.has(ip)) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return { limited: false, resetAt: now + RATE_LIMIT_WINDOW_MS };
+  }
+  const entry = rateLimitMap.get(ip);
+  if (now > entry.resetAt) {
+    entry.count = 1;
+    entry.resetAt = now + RATE_LIMIT_WINDOW_MS;
+    return { limited: false, resetAt: entry.resetAt };
+  }
+  entry.count++;
+  if (entry.count > RATE_LIMIT_MAX) {
+    return { limited: true, resetAt: entry.resetAt };
+  }
+  return { limited: false, resetAt: entry.resetAt };
+}
+
+app.use((req, res, next) => {
+  const clientIp = req.ip || req.connection.remoteAddress || 'unknown';
+  const info = getRateLimitInfo(clientIp);
+  res.set('X-RateLimit-Reset', String(info.resetAt));
+  if (info.limited) {
+    console.warn(`[${new Date().toISOString()}] Rate limit exceeded for ${clientIp}`);
+    return res.status(429).json({
+      success: false,
+      error: 'Too many requests. Please try again later.',
+      retryAfter: Math.ceil((info.resetAt - Date.now()) / 1000)
+    });
+  }
+  next();
+});
+
+// Periodically clean up stale rate-limit entries
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of rateLimitMap.entries()) {
+    if (now > entry.resetAt) rateLimitMap.delete(ip);
+  }
+}, RATE_LIMIT_WINDOW_MS * 2);
+
 const CLAUDE_DIR = path.join(process.env.HOME, '.claude');
 const TEAMS_DIR = path.join(CLAUDE_DIR, 'teams');
 const DESCRIPTIONS_FILE = path.join(__dirname, 'agents.json');
@@ -444,6 +504,15 @@ app.put('/api/agents/:id/description', (req, res) => {
 app.post('/api/spawn', (req, res) => {
   try {
     const { name, role, prompt, description } = req.body;
+
+    // Input validation
+    if (!name || typeof name !== 'string' || name.trim().length === 0) {
+      return res.status(400).json({ success: false, error: 'Missing agent name' });
+    }
+    if (name.length > 64) {
+      return res.status(400).json({ success: false, error: 'Agent name too long (max 64 chars)' });
+    }
+
     const fullPrompt = prompt || `${name} is a ${role} agent.`;
 
     const safeName = name.toLowerCase().replace(/[^a-z0-9]/g, '-');
@@ -511,6 +580,168 @@ app.post('/api/spawn', (req, res) => {
       logFile,
       canSpawn,
       resumeCommand: canSpawn ? null : `claude -r ${teamName}`
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ── Health Check Endpoint ───────────────────────────────────────
+app.get('/api/health', (req, res) => {
+  const uptime = process.uptime();
+  const pidFiles = [];
+
+  if (fs.existsSync(PID_DIR)) {
+    const files = fs.readdirSync(PID_DIR);
+    for (const f of files) {
+      if (f.endsWith('.pid')) {
+        try {
+          const pid = parseInt(fs.readFileSync(path.join(PID_DIR, f), 'utf8'), 10);
+          pidFiles.push({ file: f, pid, alive: pid ? checkPidAlive(pid) : false });
+        } catch {
+          pidFiles.push({ file: f, pid: null, alive: false });
+        }
+      }
+    }
+  }
+
+  res.json({
+    success: true,
+    uptime: Math.round(uptime),
+    uptimeHuman: `${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m ${Math.floor(uptime % 60)}s`,
+    pid: process.pid,
+    nodeVersion: process.version,
+    platform: process.platform,
+    memoryUsage: process.memoryUsage(),
+    pidDirectory: {
+      path: PID_DIR,
+      exists: fs.existsSync(PID_DIR),
+      files: pidFiles
+    },
+    timestamp: new Date().toISOString()
+  });
+});
+
+// ── Stats Endpoint ──────────────────────────────────────────────
+app.get('/api/stats', (req, res) => {
+  try {
+    const agents = getRunningAgents();
+    const teams = getTeams();
+
+    // Count agents by status
+    const statusCounts = { working: 0, idle: 0, offline: 0 };
+    for (const a of agents) {
+      if (a.sessionActive) {
+        if (a.isLaunched) statusCounts.working++;
+        else statusCounts.idle++;
+      } else {
+        statusCounts.offline++;
+      }
+    }
+
+    // Mock average response time
+    const mockResponseTime = Math.random() * 800 + 200;
+
+    // Teams with most/least activity (by task count)
+    let mostActive = null;
+    let leastActive = null;
+    if (teams.length > 0) {
+      const sorted = [...teams].sort((a, b) => b.taskStatus.total - a.taskStatus.total);
+      mostActive = { name: sorted[0].name, tasks: sorted[0].taskStatus.total };
+      leastActive = { name: sorted[sorted.length - 1].name, tasks: sorted[sorted.length - 1].taskStatus.total };
+    }
+
+    res.json({
+      success: true,
+      agents: {
+        total: agents.length,
+        byStatus: statusCounts
+      },
+      averageResponseTimeMs: Math.round(mockResponseTime),
+      teams: {
+        total: teams.length,
+        mostActive,
+        leastActive
+      },
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ── Bulk Wake Endpoint ──────────────────────────────────────────
+app.post('/api/agents/bulk-wake', (req, res) => {
+  try {
+    const agents = getRunningAgents();
+    if (agents.length === 0) {
+      return res.json({ success: false, message: 'No agent teams to wake' });
+    }
+
+    const teamNames = [...new Set(agents.map(a => a.teamName))];
+    const canSpawn = checkClaudeCompatibility();
+    const progress = { total: teamNames.length, completed: 0, teams: [] };
+
+    for (const teamName of teamNames) {
+      const teamConfigPath = path.join(TEAMS_DIR, teamName, 'config.json');
+      try {
+        if (!fs.existsSync(teamConfigPath)) {
+          progress.teams.push({ teamName, status: 'error', error: 'Config not found' });
+          progress.completed++;
+          continue;
+        }
+
+        const config = JSON.parse(fs.readFileSync(teamConfigPath, 'utf8'));
+        if (!config.members || config.members.length === 0) {
+          progress.teams.push({ teamName, status: 'skipped', reason: 'No members' });
+          progress.completed++;
+          continue;
+        }
+
+        const agentResults = [];
+        for (const member of config.members) {
+          if (!canSpawn) {
+            agentResults.push({
+              name: member.name,
+              status: 'registered',
+              note: 'OpenRouter requires manual resume'
+            });
+            continue;
+          }
+
+          let cmd;
+          if (member.name.toLowerCase() === 'trevor' || member.agentType === 'manager' || member.agentType === 'trevor') {
+            cmd = '--agent=trevor -p "Resume your previous work as manager agent."';
+          } else {
+            cmd = `-p "Wake up agent ${member.name}, continue previous work."`;
+          }
+
+          const safeName = member.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
+          const backgroundId = `${safeName}-${Date.now()}`;
+          const { pid, logFile } = spawnBackgroundProcess(backgroundId, cmd);
+
+          if (pid) savePid(`${teamName}.pid`, pid);
+          agentResults.push({ name: member.name, status: pid ? 'waking_up' : 'failed', pid, logFile });
+        }
+
+        try {
+          fs.writeFileSync(teamConfigPath, JSON.stringify(config, null, 2));
+        } catch {}
+
+        progress.teams.push({ teamName, status: 'done', agents: agentResults });
+        progress.completed++;
+      } catch (err) {
+        progress.teams.push({ teamName, status: 'error', error: err.message });
+        progress.completed++;
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Bulk woke ${progress.completed}/${progress.total} team(s)`,
+      canSpawn,
+      progress
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -705,5 +936,36 @@ app.get('/api/settings', (req, res) => {
   }
 });
 
+
+// ── Graceful Shutdown ───────────────────────────────────────────
+function gracefulShutdown(signal) {
+  console.log(`\n[${new Date().toISOString()}] ${signal} received — shutting down gracefully...`);
+
+  // Kill background processes tracked by PID files
+  if (fs.existsSync(PID_DIR)) {
+    const pidFiles = fs.readdirSync(PID_DIR).filter(f => f.endsWith('.pid'));
+    for (const pidFile of pidFiles) {
+      try {
+        const pid = loadPid(pidFile);
+        if (pid && checkPidAlive(pid)) {
+          process.kill(pid, 'SIGTERM');
+          console.log(`  Killed PID ${pid} (${pidFile})`);
+        }
+        fs.unlinkSync(path.join(PID_DIR, pidFile));
+      } catch (e) {
+        console.error(`  Failed to clean up ${pidFile}: ${e.message}`);
+      }
+    }
+  }
+
+  // Clear rate-limit state
+  rateLimitMap.clear();
+
+  console.log('[shutdown] Cleanup complete.');
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 module.exports = app;

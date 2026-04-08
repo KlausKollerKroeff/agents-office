@@ -6,6 +6,17 @@ const REFRESH_INTERVAL = 8000;
 let refreshTimer = null;
 let agents = [];
 
+// Security: escape HTML to prevent XSS in innerHTML usage
+function esc(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // Canvas
 const canvas = document.getElementById('officeCanvas');
 const ctx = canvas.getContext('2d');
@@ -21,7 +32,6 @@ const tasksActive = document.getElementById('tasksActive');
 
 // Drag-and-drop state for agents on the map
 const customAgentPositions = new Map(); // agent.name -> { x, y }
-let dragState = null; // { agent, startX, startY } or null
 
 // Tile size for pixel-art movement
 const TILE = 48;
@@ -253,6 +263,21 @@ function drawTile(x, y, tile) {
       // Desk top highlight
       ctx.fillStyle = '#a68527';
       ctx.fillRect(screenX + 6, screenY + 10, TILE - 12, TILE - 22);
+      // Coffee mug on desk (alternating sides based on tile position)
+      const mugSide = (x + y) % 2 === 0 ? 1 : 0;
+      const mugX = mugSide ? screenX + 8 : screenX + TILE - 16;
+      const mugY2 = screenY + 10;
+      // Mug body
+      ctx.fillStyle = '#f5f5f5';
+      ctx.fillRect(mugX, mugY2, 8, 10);
+      // Mug handle
+      ctx.fillStyle = '#ddd';
+      ctx.fillRect(mugX + (mugSide ? 7 : -3), mugY2 + 2, 3, 6);
+      // Steam rising
+      const steamOff = Math.sin(Date.now() / 400 + x * 3 + y * 7) * 1;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+      ctx.fillRect(mugX + 2, mugY2 - 4 + steamOff, 2, 3);
+      ctx.fillRect(mugX + 5, mugY2 - 6 + steamOff * 1.5, 2, 2);
       break;
     }
     case 6: {
@@ -561,6 +586,7 @@ function drawGenericSprite(agent, screenX, screenY) {
 
 // Draw agent sprite (pixel character) with status-based animations
 function drawAgentSprite(agent, screenX, screenY) {
+  const nowTs = Date.now();
   const name = agent.name.toLowerCase();
   const isWorking = agent.sessionActive || agent.processAlive;
   const isIdle = agent.isLaunched && !agent.processAlive;
@@ -568,13 +594,15 @@ function drawAgentSprite(agent, screenX, screenY) {
 
   let bobY = 0;
 
-  // Working agents: no bounce — focused at desk
+  // Working agents: fast typing bob oscillation
+  if (isWorking) {
+    bobY = Math.sin(Date.now() / 120 + name.charCodeAt(0) * 7) * 1.5;
   // Idle agents: gentle sway — relaxed browsing
-  // Offline agents: slow Zzz float
-  if (isIdle) {
-    bobY = Math.sin(Date.now() / 300 + name.charCodeAt(0) * 7) * 2;
-  } else if (isOffline) {
-    bobY = Math.sin(Date.now() / 500 + name.charCodeAt(0) * 5) * 1.5;
+  } else if (isIdle) {
+    bobY = Math.sin(Date.now() / 300 + name.charCodeAt(0) * 5) * 2;
+  } else {
+    // Offline agents: slow Zzz float
+    bobY = Math.sin(Date.now() / 500 + name.charCodeAt(0) * 3) * 1.5;
   }
   screenY += bobY;
 
@@ -592,6 +620,14 @@ function drawAgentSprite(agent, screenX, screenY) {
     // Laptop glow on desk
     ctx.fillStyle = 'rgba(76, 175, 80, 0.15)';
     ctx.fillRect(screenX + 12, screenY + TILE - 4, TILE - 24, 4);
+    // Typing indicator — animated caret below sprite
+    const typingAlpha = Math.abs(Math.sin(nowTs / 300 + name.charCodeAt(0) * 3));
+    ctx.fillStyle = `rgba(76, 175, 80, ${typingAlpha})`;
+    ctx.font = 'bold 8px "Press Start 2P", monospace';
+    const caretBlink = Math.sin(nowTs / 400 + name.charCodeAt(0)) > 0;
+    if (caretBlink) {
+      ctx.fillText('_', screenX + 8 + ctx.measureText(agent.name).width, screenY + TILE + 14);
+    }
   } else if (isIdle) {
     // Idle sparkle — tiny star above
     const starPhase = Math.sin(Date.now() / 200 + name.charCodeAt(0) * 13);
@@ -872,8 +908,18 @@ function drawFountainAnimation() {
   const fy = 12 * TILE - camY + TILE / 2;
   if (fx < -50 || fx > canvas.width + 50 || fy < -50 || fy > canvas.height + 50) return;
 
+  // Fountain basin (stone)
+  ctx.fillStyle = '#78909c';
+  ctx.beginPath();
+  ctx.ellipse(fx, fy + 4, 14, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#42a5f5';
+  ctx.beginPath();
+  ctx.ellipse(fx, fy + 3, 12, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
   // Rising water column
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 6; i++) {
     const phase = (now / 150 + i * 3) % 12;
     if (phase < 6) {
       const yOff = -phase * 3;
@@ -885,8 +931,8 @@ function drawFountainAnimation() {
   }
 
   // Falling drops (sine-based spread)
-  for (let i = 0; i < 8; i++) {
-    const angle = (i / 8) * Math.PI * 2 + now / 800;
+  for (let i = 0; i < 10; i++) {
+    const angle = (i / 10) * Math.PI * 2 + now / 800;
     const radius = 12 + Math.sin(now / 200 + i) * 6;
     const dx = fx + Math.cos(angle) * radius;
     const dy = fy - 16 + Math.sin(now / 180 + i * 1.5) * 4 + (i % 3) * 5;
@@ -906,6 +952,14 @@ function drawFountainAnimation() {
     ctx.ellipse(fx, fy + 6, ringR, ringR * 0.4, 0, 0, Math.PI * 2);
     ctx.stroke();
   }
+
+  // Sparkle at top of fountain jet
+  const sparklePhase = (now / 400) % 1;
+  const sparkleAlpha = sparklePhase < 0.5 ? sparklePhase * 2 : (1 - sparklePhase) * 2;
+  ctx.fillStyle = `rgba(255, 255, 255, ${sparkleAlpha * 0.8})`;
+  ctx.fillRect(fx - 1, fy - 26, 3, 3);
+  ctx.fillRect(fx + 4, fy - 24, 2, 2);
+  ctx.fillRect(fx - 5, fy - 23, 2, 2);
 }
 
 // Wall posters and decorations along edges
@@ -967,6 +1021,52 @@ function drawWallDecorations() {
     ctx.fillRect(p3x + 10, p3y + 16, TILE - 24, 2);
     ctx.fillRect(p3x + 8, p3y + 22, TILE - 20, 2);
     ctx.fillRect(p3x + 12, p3y + 28, TILE - 28, 2);
+  }
+
+  // Clock on office wall (top-left of office area)
+  const clkX2 = ox(5), clkY2 = oy(1);
+  if (clkX2 > -TILE && clkX2 < canvas.width + TILE && clkY2 > -TILE && clkY2 < canvas.height + TILE) {
+    // Golden frame
+    ctx.fillStyle = '#b8860b';
+    ctx.beginPath();
+    ctx.arc(clkX2 + TILE / 2, clkY2 + TILE / 2, 18, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#8b6914';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // Clock face
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(clkX2 + TILE / 2, clkY2 + TILE / 2, 15, 0, Math.PI * 2);
+    ctx.fill();
+    // Hour markers
+    ctx.fillStyle = '#2a2a4e';
+    for (let i = 0; i < 12; i++) {
+      const a = (i * 30 - 90) * Math.PI / 180;
+      ctx.fillRect(clkX2 + TILE / 2 + Math.cos(a) * 12 - 1, clkY2 + TILE / 2 + Math.sin(a) * 12 - 1, 2, 2);
+    }
+    // Hour hand
+    const now = new Date();
+    const hr = now.getHours() % 12, mn = now.getMinutes(), sec = now.getSeconds();
+    ctx.strokeStyle = '#2a2a4e';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(clkX2 + TILE / 2, clkY2 + TILE / 2);
+    ctx.lineTo(clkX2 + TILE / 2 + Math.cos((hr * 30 - 90) * Math.PI / 180) * 7, clkY2 + TILE / 2 + Math.sin((hr * 30 - 90) * Math.PI / 180) * 7);
+    ctx.stroke();
+    // Minute hand
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(clkX2 + TILE / 2, clkY2 + TILE / 2);
+    ctx.lineTo(clkX2 + TILE / 2 + Math.cos((mn * 6 - 90) * Math.PI / 180) * 11, clkY2 + TILE / 2 + Math.sin((mn * 6 - 90) * Math.PI / 180) * 11);
+    ctx.stroke();
+    // Second hand (red, ticking)
+    ctx.strokeStyle = '#e53935';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(clkX2 + TILE / 2, clkY2 + TILE / 2);
+    ctx.lineTo(clkX2 + TILE / 2 + Math.cos((sec * 6 - 90) * Math.PI / 180) * 13, clkY2 + TILE / 2 + Math.sin((sec * 6 - 90) * Math.PI / 180) * 13);
+    ctx.stroke();
   }
 }
 
@@ -1357,9 +1457,9 @@ function getStatusBadge(agent) {
 function showAgentHoverStatus(agent, mouseX, mouseY) {
   const badge = getStatusBadge(agent);
   agentHoverTooltip.innerHTML = `
-    <div class="agent-name">${agent.name}</div>
-    <div class="agent-status" style="color:${badge.color}">${badge.text}</div>
-    <div class="agent-team">${agent.teamName}</div>
+    <div class="agent-name">${esc(agent.name)}</div>
+    <div class="agent-status" style="color:${badge.color}">${esc(badge.text)}</div>
+    <div class="agent-team">${esc(agent.teamName)}</div>
   `;
   agentHoverTooltip.style.left = (mouseX + 16) + 'px';
   agentHoverTooltip.style.top = (mouseY - 10) + 'px';
@@ -1445,7 +1545,7 @@ canvas.addEventListener('mouseup', (e) => {
   // Only drop if the tile is walkable
   if (isWalkable(tileX, tileY) || getTileAt(tileX, tileY) === 2) {
     customAgentPositions.set(drag.agent.name, { x: tileX, y: tileY });
-    showNotification(`<strong>${drag.agent.name}</strong> moved to desk (${tileX}, ${tileY})`, 3000);
+    showNotification(` <strong>${esc(drag.agent.name)}</strong> moved to desk (${esc(tileX)}, ${esc(tileY)})`, 3000);
   }
 
   drag.agent = null;
@@ -1561,22 +1661,22 @@ function renderRoster(agentList) {
     const statusTitle = agent.statusDetail || agent.name;
     const categoryClass = agent.category === 'sub-agent' ? ' roster-card-sub' : '';
     return `
-      <div class="roster-card${categoryClass}" data-status="${agent.statusDetail}" title="${statusTitle}">
+      <div class="roster-card${categoryClass}" data-status="${esc(agent.statusDetail)}" title="${esc(statusTitle)}">
         <div style="display:flex;">
           <div class="roster-avatar-icon">
-            <div class="roster-icon ${s.cls}" style="background:${t.color};border-radius:50%;border:2px solid #fff;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:0.8rem;position:relative;">${t.icon}
+            <div class="roster-icon ${s.cls}" style="background:${t.color};border-radius:50%;border:2px solid #fff;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:0.8rem;position:relative;">${esc(t.icon)}
               <span class="roster-status-dot" style="position:absolute;top:22px;right:4px;width:10px;height:10px;border-radius:50%;border:2px solid #2a2a4e;background:${s.color};"></span>
             </div>
           </div>
           <div class="roster-info">
             <div class="roster-info-left">
-              <span class="roster-name">${agent.name} <span style="color:${s.color};font-size:0.6rem;">&#8226; ${s.text}</span></span>
-              <span class="roster-team">Team: ${agent.teamName}</span>
+              <span class="roster-name">${esc(agent.name)} <span style="color:${s.color};font-size:0.6rem;">&#8226; ${esc(s.text)}</span></span>
+              <span class="roster-team">Team: ${esc(agent.teamName)}</span>
             </div>
-            <span class="roster-badge ${t.cls}">${t.label}</span>
+            <span class="roster-badge ${t.cls}">${esc(t.label)}</span>
           </div>
         </div>
-        <div class="roster-desc">${agent.description || 'No description yet.'}<div style="text-align:right;margin-top:4px;">${actionBtn}</div></div>
+        <div class="roster-desc">${esc(agent.description) || esc('No description yet.' )}<div style="text-align:right;margin-top:4px;">${actionBtn}</div></div>
       </div>
     `;
   }
@@ -1616,9 +1716,9 @@ function renderRoster(agentList) {
           // Check if fallback (osascript failed)
           if (result.command || result.fallback) {
             const cmd = result.command || result.fallback;
-            showNotification(`<strong>${result.message}</strong><br><code style="font-size:0.6rem;">${cmd}</code>`, 8000);
+            showNotification(`<strong>${esc(result.message)}</strong><br><code style="font-size:0.6rem;">${esc(cmd)}</code>`, 8000);
           } else {
-            showNotification(`<strong>${result.message}</strong>`, 3000);
+            showNotification(`<strong>${esc(result.message)}</strong>`, 3000);
           }
         }
         setTimeout(refreshData, 3000);
@@ -1629,20 +1729,21 @@ function renderRoster(agentList) {
     });
   });
 
-  // Bind filter events
+  // Bind filter events — use direct property assignment to avoid
+  // accumulating listeners on every renderRoster call (every REFRESH_INTERVAL)
   const searchBar = document.querySelector('.roster-search');
   if (searchBar) {
-    searchBar.addEventListener('input', (e) => {
+    searchBar.oninput = (e) => {
       rosterSearchQuery = e.target.value;
       renderRoster(agents);
-    });
+    };
   }
   const typeFilter = document.querySelector('.roster-type-filter');
   if (typeFilter) {
-    typeFilter.addEventListener('change', (e) => {
+    typeFilter.onchange = (e) => {
       rosterFilterType = e.target.value;
       renderRoster(agents);
-    });
+    };
   }
 }
 
@@ -1749,7 +1850,7 @@ async function spawnAgent(name, role, prompt, description) {
       // Auto-refresh after a delay to pick up the new agent
       setTimeout(refreshData, 3000);
     } else {
-      showNotification(`Error: ${data.error}`, 5000);
+      showNotification(`Error: ${esc(data.error)}`, 5000);
     }
   } catch (err) {
     console.error('Failed to spawn agent:', err);
@@ -1795,7 +1896,7 @@ function bindFormEvents() {
 
     hireForm.innerHTML = `
       <div style="text-align:center;padding:20px 0;">
-        <span style="font-family:'Press Start 2P',monospace;font-size:0.7rem;">Spawning "${name}"...</span><br><br>
+        <span style="font-family:'Press Start 2P',monospace;font-size:0.7rem;">Spawning "${esc(name)}"...</span><br><br>
         <span style="font-size:1.5rem;">🐾</span><br><br>
         <span style="font-family:'Press Start 2P',monospace;font-size:0.5rem;color:#6a6a8e;">This will open a Claude session.<br>The agent will appear on the map shortly.</span>
       </div>
@@ -1817,7 +1918,7 @@ function bindFormEvents() {
       const resp = await fetch(`${API_BASE}/api/launch-all`, { method: 'POST' });
       const result = await resp.json();
       if (!result.success || result.count === 0) {
-        showNotification(`<strong>No agents to launch.</strong><br>${result.message || ''}`, 3000);
+        showNotification(`<strong>No agents to launch.</strong><br>${esc(result.message) || esc('')}`, 3000);
         return;
       }
 
@@ -1882,6 +1983,7 @@ let miniGameActive = null; // 'tennis' | 'basketball' | null
 const tennisCanvas = document.getElementById('tennisCanvas');
 const tCtx = tennisCanvas.getContext('2d');
 let tennisState = null;
+let tennisRafId = null; // track rAF so we can cancel on close
 
 function startTennis() {
   miniGameActive = 'tennis';
@@ -1935,8 +2037,18 @@ function runTennis() {
 
   // AI paddle (top)
   if (s.ballY <= 16 && s.ballX >= s.aiX && s.ballX <= s.aiX + s.paddleW && s.ballVY < 0) {
-    s.ballVY *= -1.05;
+    const cappedVY = Math.min(Math.abs(s.ballVY) * 1.05, 12);
+    s.ballVY = -cappedVY;
     s.ballY = 18;
+  }
+
+  // Hard cap: prevent ball from escaping due to cumulative speed
+  const maxSpeed = 16;
+  const currentSpeed = Math.sqrt(s.ballVX * s.ballVX + s.ballVY * s.ballVY);
+  if (currentSpeed > maxSpeed) {
+    const scale = maxSpeed / currentSpeed;
+    s.ballVX *= scale;
+    s.ballVY *= scale;
   }
 
   // Player paddle (bottom)
@@ -2004,7 +2116,7 @@ function runTennis() {
   tCtx.lineWidth = 1.5;
   tCtx.stroke();
 
-  requestAnimationFrame(runTennis);
+  tennisRafId = requestAnimationFrame(runTennis);
 }
 
 function resetTennisBall(s, dir) {
@@ -2020,6 +2132,7 @@ function resetTennisBall(s, dir) {
 const bbCanvas = document.getElementById('basketballCanvas');
 const bbCtx = bbCanvas.getContext('2d');
 let bbState = null;
+let bbRafId = null; // track rAF so we can cancel on close
 
 function startBasketball() {
   miniGameActive = 'basketball';
@@ -2182,7 +2295,7 @@ function runBasketball() {
   bbCtx.fillText('Click + drag to aim and shoot', cw / 2, ch - 40);
   bbCtx.textAlign = 'start';
 
-  requestAnimationFrame(runBasketball);
+  bbRafId = requestAnimationFrame(runBasketball);
 }
 
 function resetBasketballBall(s) {
@@ -2261,8 +2374,16 @@ function openMiniGame(type) {
 }
 
 function closeMiniGames() {
-  if (miniGameActive === 'tennis' && tennisState) {
+  if (tennisState) {
     tennisState.running = false;
+  }
+  if (tennisRafId) {
+    cancelAnimationFrame(tennisRafId);
+    tennisRafId = null;
+  }
+  if (bbRafId) {
+    cancelAnimationFrame(bbRafId);
+    bbRafId = null;
   }
   miniGameActive = null;
   tennisState = null;
